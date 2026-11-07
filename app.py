@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from functools import wraps
+from io import BytesIO
 from urllib.parse import unquote, urljoin, urlparse, urlsplit
 
 from flask import (
@@ -501,7 +502,6 @@ def create_app(test_config=None):
     def health():
         return {"status": "ok", "application": "central-afiliados-next"}
 
-    from werkzeug.utils import secure_filename
     import uuid
     import hashlib
     import warnings
@@ -583,7 +583,7 @@ def create_app(test_config=None):
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(__import__("io").BytesIO(image_bytes)) as image:
+                with Image.open(BytesIO(image_bytes)) as image:
                     image_format = (image.format or "").upper()
                     width, height = image.size
                     if image_format not in image_extensions or width * height > 40000000:
@@ -599,8 +599,6 @@ def create_app(test_config=None):
     @login_required
     def uploaded_file(filename):
         return send_from_directory(upload_dir, filename)
-    allowed_extensions = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-
     @app.route("/produtos/buscar-shopee", methods=["GET", "POST"])
     @login_required
     def shopee_product_search():
@@ -1044,7 +1042,7 @@ def create_app(test_config=None):
             abort(400)
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
-            flash("Falta configurar GEMINI_API_KEY no Termux. Nenhuma imagem foi gerada.", "error")
+            flash("Falta configurar GEMINI_API_KEY no ambiente do servidor. Nenhuma imagem foi gerada.", "error")
             return redirect(url_for("create_content_ai", tipo=content_type))
 
         db = connect_db()
@@ -1112,21 +1110,32 @@ def create_app(test_config=None):
                     "imageConfig": {"aspectRatio": ratio}
                 }
             }
-            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=" + api_key
+            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent"
             req = urllib.request.Request(
-                endpoint, data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}, method="POST"
+                endpoint, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                }, method="POST"
             )
             try:
                 with urllib.request.urlopen(req, timeout=120) as response:
-                    result = json.loads(response.read().decode("utf-8"))
+                    raw_result = response.read(12 * 1024 * 1024 + 1)
+                    if len(raw_result) > 12 * 1024 * 1024:
+                        raise ValueError("A resposta do Gemini excedeu o tamanho permitido.")
+                    result = json.loads(raw_result.decode("utf-8"))
             except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")[:500]
-                app.logger.warning("Gemini API HTTP %s: %s", exc.code, detail)
-                flash("O Gemini recusou a solicitação ou houve erro na API. Confira a chave, o acesso e a cota no Google AI Studio.", "error")
+                app.logger.warning("Gemini API respondeu com HTTP %s.", exc.code)
+                flash(
+                    f"O Gemini recusou a solicitação (HTTP {exc.code}). Confira a chave, o acesso ao modelo e a cota no Google AI Studio.",
+                    "error",
+                )
                 return redirect(url_for("create_content_ai", tipo=content_type))
-            except (urllib.error.URLError, TimeoutError):
+            except (urllib.error.URLError, TimeoutError, OSError):
                 flash("Não foi possível conectar ao Gemini agora. Tente novamente em instantes.", "error")
+                return redirect(url_for("create_content_ai", tipo=content_type))
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                flash("O Gemini retornou uma resposta inválida ou grande demais. Tente novamente.", "error")
                 return redirect(url_for("create_content_ai", tipo=content_type))
 
             image_bytes = None
@@ -1137,15 +1146,24 @@ def create_app(test_config=None):
                         caption_parts.append(part["text"])
                     inline = part.get("inlineData") or part.get("inline_data")
                     if inline and inline.get("data") and (inline.get("mimeType") or inline.get("mime_type", "")).startswith("image/"):
-                        image_bytes = base64.b64decode(inline["data"])
-                        break
+                        try:
+                            image_bytes = base64.b64decode(inline["data"], validate=True)
+                        except (ValueError, TypeError):
+                            image_bytes = None
+                        if image_bytes:
+                            break
                 if image_bytes:
                     break
             if not image_bytes:
                 flash("O Gemini respondeu, mas não retornou uma imagem. Tente novamente ou simplifique as instruções.", "error")
                 return redirect(url_for("create_content_ai", tipo=content_type))
 
-            filename = uuid.uuid4().hex + ".png"
+            try:
+                generated_extension = validate_generated_image(image_bytes)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("create_content_ai", tipo=content_type))
+            filename = uuid.uuid4().hex + generated_extension
             (upload_dir / filename).write_bytes(image_bytes)
             caption = "\n".join(caption_parts).strip()
             if content_type == "post" and "link no perfil" not in caption.lower():
@@ -1215,14 +1233,26 @@ def create_app(test_config=None):
             db.close()
         return redirect(url_for("products"))
 
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        return response
+
     return app
 
 
 if __name__ == "__main__":
+    from waitress import serve
+
     application = create_app()
-    # Apenas desenvolvimento local. Não publicar o servidor Flask diretamente na internet.
-    application.run(
+    # O Waitress fica limitado ao loopback; o acesso externo deve passar pelo túnel HTTPS.
+    serve(
+        application,
         host="127.0.0.1",
         port=int(os.environ.get("PORT", "5000")),
-        debug=False,
+        threads=4,
+        expose_tracebacks=False,
     )
