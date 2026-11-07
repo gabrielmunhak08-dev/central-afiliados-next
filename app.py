@@ -1376,7 +1376,7 @@ if __name__ == "__main__":
     # O Waitress fica limitado ao loopback; o acesso externo deve passar pelo túnel HTTPS.
     serve(
         application,
-        host="127.0.0.1",
+        host=os.environ.get("CENTRAL_HOST", "127.0.0.1"),
         port=int(os.environ.get("PORT", "5000")),
         threads=4,
         expose_tracebacks=False,
