@@ -2,14 +2,17 @@
 import hmac
 import base64
 import json
+import math
 import mimetypes
-import urllib.error
-import urllib.request
 import os
 import secrets
+import shutil
 import sqlite3
+import urllib.error
+import urllib.request
 from pathlib import Path
 from functools import wraps
+from urllib.parse import unquote, urljoin, urlparse, urlsplit
 
 from flask import (
     Flask, abort, flash, g, redirect, render_template, request, session, url_for, send_from_directory
@@ -45,7 +48,7 @@ def create_app(test_config=None):
         ),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=False,  # True ao publicar somente por HTTPS.
+        SESSION_COOKIE_SECURE=os.environ.get("CENTRAL_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"},
         PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
         MAX_CONTENT_LENGTH=16 * 1024 * 1024,
         TESTING=False,
@@ -61,6 +64,9 @@ def create_app(test_config=None):
             )
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    database_path = str(app.config["DATABASE"])
+    if database_path != ":memory:":
+        Path(database_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
     def connect_db():
         db = sqlite3.connect(app.config["DATABASE"])
@@ -166,6 +172,26 @@ def create_app(test_config=None):
             return db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         finally:
             db.close()
+
+    def category_options():
+        db = connect_db()
+        try:
+            return db.execute(
+                """SELECT c.name, COUNT(p.id) AS product_count
+                   FROM categories c
+                   LEFT JOIN products p
+                     ON LOWER(TRIM(p.category)) = LOWER(TRIM(c.name))
+                   GROUP BY c.id, c.name
+                   ORDER BY c.name COLLATE NOCASE"""
+            ).fetchall()
+        finally:
+            db.close()
+
+    @app.before_request
+    def prevent_public_upload_access():
+        # Os uploads são privados; não devem passar pelo endpoint estático do Flask.
+        if request.path.startswith("/static/uploads/"):
+            abort(404)
 
     @app.before_request
     def load_user_and_csrf():
@@ -306,7 +332,7 @@ def create_app(test_config=None):
                         db.rollback()
                         return redirect(url_for("login"))
                     cursor = db.execute(
-                        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
                         (username, generate_password_hash(password)),
                     )
                     db.commit()
@@ -345,7 +371,17 @@ def create_app(test_config=None):
                 session.permanent = True
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 destination = request.args.get("next", "")
-                if not destination.startswith("/") or destination.startswith("//"):
+                decoded_target = unquote(destination)
+                parsed_target = urlsplit(decoded_target)
+                safe_local_target = (
+                    decoded_target.startswith("/")
+                    and not decoded_target.startswith("//")
+                    and not parsed_target.scheme
+                    and not parsed_target.netloc
+                    and "\\" not in decoded_target
+                    and not any(ord(char) < 32 for char in decoded_target)
+                )
+                if not safe_local_target:
                     destination = url_for("dashboard")
                 return redirect(destination)
             flash("Usuário ou senha incorretos.", "error")
@@ -467,8 +503,97 @@ def create_app(test_config=None):
 
     from werkzeug.utils import secure_filename
     import uuid
-    upload_dir = Path(app.static_folder) / "uploads"
+    import hashlib
+    import warnings
+    from PIL import Image, UnidentifiedImageError
+
+    legacy_upload_dir = (Path(app.static_folder) / "uploads").resolve()
+    configured_upload_dir = os.environ.get("CENTRAL_UPLOAD_FOLDER", "").strip()
+    upload_dir = (
+        Path(configured_upload_dir).expanduser().resolve()
+        if configured_upload_dir
+        else (Path(app.instance_path) / "uploads").resolve()
+    )
     upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Migra fotos antigas para fora de /static sem perder arquivos nem referências do banco.
+    if legacy_upload_dir.exists() and legacy_upload_dir != upload_dir:
+        for old_file in sorted(legacy_upload_dir.iterdir()):
+            if not old_file.is_file():
+                raise RuntimeError(
+                    "Há uma pasta inesperada em static/uploads. Faça backup e revise antes de atualizar."
+                )
+            new_file = upload_dir / old_file.name
+            if new_file.exists():
+                old_hash = hashlib.sha256(old_file.read_bytes()).digest()
+                new_hash = hashlib.sha256(new_file.read_bytes()).digest()
+                if old_hash != new_hash:
+                    raise RuntimeError(
+                        f"Conflito ao migrar a foto {old_file.name}; nenhum arquivo foi apagado."
+                    )
+            else:
+                shutil.copy2(old_file, new_file)
+                if hashlib.sha256(old_file.read_bytes()).digest() != hashlib.sha256(new_file.read_bytes()).digest():
+                    raise RuntimeError(
+                        f"Falha ao confirmar a cópia da foto {old_file.name}; arquivo original preservado."
+                    )
+            old_file.unlink()
+        try:
+            legacy_upload_dir.rmdir()
+        except OSError:
+            pass
+
+    image_extensions = {
+        "JPEG": ".jpg",
+        "PNG": ".png",
+        "WEBP": ".webp",
+        "GIF": ".gif",
+    }
+
+    def validate_image_upload(photo):
+        """Valida o conteúdo real da imagem; não confia apenas na extensão do arquivo."""
+        try:
+            photo.stream.seek(0, 2)
+            size = photo.stream.tell()
+            photo.stream.seek(0)
+            if size <= 0 or size > 8 * 1024 * 1024:
+                raise ValueError("Cada imagem deve ter até 8 MB.")
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(photo.stream) as image:
+                    image_format = (image.format or "").upper()
+                    width, height = image.size
+                    if image_format not in image_extensions:
+                        raise ValueError("Formato de imagem não aceito. Use PNG, JPG, WEBP ou GIF.")
+                    if width < 1 or height < 1 or width > 12000 or height > 12000 or width * height > 40000000:
+                        raise ValueError("A imagem possui dimensões muito grandes.")
+                    image.verify()
+            photo.stream.seek(0)
+            return image_extensions[image_format]
+        except ValueError:
+            photo.stream.seek(0)
+            raise
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+            photo.stream.seek(0)
+            raise ValueError("O arquivo enviado não é uma imagem válida ou está danificado.") from exc
+
+    def validate_generated_image(image_bytes):
+        if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
+            raise ValueError("A imagem gerada excedeu o tamanho permitido.")
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(__import__("io").BytesIO(image_bytes)) as image:
+                    image_format = (image.format or "").upper()
+                    width, height = image.size
+                    if image_format not in image_extensions or width * height > 40000000:
+                        raise ValueError("O Gemini retornou um formato ou tamanho de imagem não aceito.")
+                    image.verify()
+            return image_extensions[image_format]
+        except ValueError:
+            raise
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+            raise ValueError("O Gemini retornou um arquivo de imagem inválido.") from exc
 
     @app.get("/uploads/<path:filename>")
     @login_required
@@ -626,13 +751,36 @@ def create_app(test_config=None):
 
         link = request.form.get("affiliate_link", "").strip()
         draft = {"name": "", "category": "", "price": "", "affiliate_link": link, "commission": "", "notes": ""}
-        parsed = urlparse(link)
-        host = (parsed.hostname or "").lower()
         allowed_hosts = ("shopee.com.br", "shope.ee")
-        if parsed.scheme != "https" or not any(host == h or host.endswith("." + h) for h in allowed_hosts):
+
+        def is_allowed_shopee_url(value):
+            try:
+                parsed_url = urlparse(value)
+                host = (parsed_url.hostname or "").lower()
+                return (
+                    parsed_url.scheme.lower() == "https"
+                    and bool(host)
+                    and not parsed_url.username
+                    and not parsed_url.password
+                    and parsed_url.port in (None, 443)
+                    and any(host == domain or host.endswith("." + domain) for domain in allowed_hosts)
+                )
+            except ValueError:
+                return False
+
+        class ShopeeRedirectHandler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                target = urljoin(req.full_url, newurl)
+                if not is_allowed_shopee_url(target):
+                    raise urllib.error.URLError("Redirecionamento para domínio não autorizado.")
+                return super().redirect_request(req, fp, code, msg, headers, target)
+
+        if not is_allowed_shopee_url(link):
             flash("Cole um link HTTPS válido da Shopee. O link de afiliado será preservado exatamente como você enviou.", "error")
-            categories = db.execute("""SELECT c.name, COUNT(p.id) AS product_count FROM categories c LEFT JOIN products p ON LOWER(TRIM(p.category)) = LOWER(TRIM(c.name)) GROUP BY c.id, c.name ORDER BY c.name COLLATE NOCASE""").fetchall()
-            return render_template("product_form.html", product=None, product_photos=[], draft=draft, categories=categories)
+            return render_template(
+                "product_form.html", product=None, product_photos=[],
+                draft=draft, categories=category_options()
+            )
 
         try:
             req = urllib.request.Request(
@@ -644,12 +792,14 @@ def create_app(test_config=None):
                     "Cache-Control": "no-cache",
                 },
             )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                final_url = response.geturl()
-                final_host = (urlparse(final_url).hostname or "").lower()
-                if not any(final_host == h or final_host.endswith("." + h) for h in allowed_hosts):
+            opener = urllib.request.build_opener(ShopeeRedirectHandler())
+            with opener.open(req, timeout=15) as response:
+                if not is_allowed_shopee_url(response.geturl()):
                     raise ValueError("redirect host not allowed")
-                html = response.read(3_000_000).decode("utf-8", errors="replace")
+                raw_html = response.read(3_000_001)
+                if len(raw_html) > 3_000_000:
+                    raise ValueError("A página da Shopee excedeu o tamanho permitido.")
+                html = raw_html.decode("utf-8", errors="replace")
 
             parser = MetaParser()
             parser.feed(html)
@@ -675,27 +825,9 @@ def create_app(test_config=None):
                 if structured.get(key) and (key != "name" or looks_generic(draft["name"])):
                     draft[key] = structured[key]
 
-            # Fallback conservador: extrai preço apenas de texto com formato monetário.
-            # Não tenta adivinhar valores nem a comissão a partir de conteúdo genérico.
-            visible_text = clean_text(re.sub(r"<[^>]+>", " ", html), 150000)
-            if not draft["price"]:
-                price_match = re.search(r"(?:R\$\s*|BRL\s*)(\d[\d.]*,\d{2})", visible_text, re.I)
-                if price_match:
-                    draft["price"] = price_match.group(1)
-
-            commission_match = re.search(
-                r"(?:comiss[aã]o|taxa\s+de\s+comiss[aã]o|commission)[^%]{0,100}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%",
-                visible_text, re.I
-            )
-            if commission_match:
-                try:
-                    pct = float(commission_match.group(1).replace(",", "."))
-                    if 0 < pct <= 100:
-                        draft["commission"] = str(pct).rstrip("0").rstrip(".")
-                except ValueError:
-                    pass
-
-            imported = [draft[k] for k in ("name", "category", "price", "notes", "commission") if draft[k]]
+            # Não extraímos preço ou comissão de texto genérico: uma página pode mostrar
+            # ofertas relacionadas, cupons ou percentuais que não pertencem ao produto.
+            imported = [draft[k] for k in ("name", "category", "price", "notes") if draft[k]]
             if imported:
                 if not draft["name"]:
                     flash("A Shopee não revelou um nome de produto confiável. Não preenchi o título genérico da Shopee; digite o nome e confira os outros campos.", "warning")
@@ -709,7 +841,10 @@ def create_app(test_config=None):
                 flash("A Shopee bloqueou ou não incluiu os dados do produto no HTML recebido. O link de afiliado foi preservado; não inventei nome, preço nem comissão. Preencha manualmente ou tente um link direto do produto.", "error")
         except Exception:
             flash("Não consegui ler os dados desta página da Shopee. O link de afiliado foi preservado; a Shopee pode exigir JavaScript ou bloquear acesso automático. Tente um link direto do produto e confira os campos manualmente.", "error")
-        return render_template("product_form.html", product=None, product_photos=[], draft=draft)
+        return render_template(
+            "product_form.html", product=None, product_photos=[],
+            draft=draft, categories=category_options()
+        )
 
     @app.route("/produtos/novo", methods=["GET", "POST"])
     @app.route("/produtos/<int:product_id>/editar", methods=["GET", "POST"])
@@ -732,7 +867,12 @@ def create_app(test_config=None):
                     commission_raw = request.form.get("commission", "").strip().replace("%", "").replace(",", ".")
                     price = float(price_raw) if price_raw else None
                     commission = float(commission_raw) if commission_raw else None
-                    if (price is not None and price <= 0) or (commission is not None and not 0 < commission <= 100):
+                    if (
+                        price is not None and (not math.isfinite(price) or price <= 0)
+                    ) or (
+                        commission is not None
+                        and (not math.isfinite(commission) or not 0 < commission <= 100)
+                    ):
                         raise ValueError()
                 except ValueError:
                     flash("Informe um preço positivo e uma comissão entre 0 e 100%.", "error")
@@ -740,6 +880,16 @@ def create_app(test_config=None):
                 if not name:
                     flash("Informe o nome do produto.", "error")
                     return redirect(request.url)
+
+                pending_photos = []
+                try:
+                    for photo in request.files.getlist("photos"):
+                        if photo and photo.filename:
+                            pending_photos.append((photo, validate_image_upload(photo)))
+                except ValueError as exc:
+                    flash(str(exc), "error")
+                    return redirect(request.url)
+
                 if product:
                     db.execute("UPDATE products SET name=?, category=?, price=?, affiliate_link=?, commission=?, notes=? WHERE id=?", (name, category, price, link, commission, notes, product_id))
                     pid = product_id
@@ -748,15 +898,12 @@ def create_app(test_config=None):
                     pid = cur.lastrowid
                 main = db.execute("SELECT image_filename FROM products WHERE id=?", (pid,)).fetchone()["image_filename"]
                 extra_count = db.execute("SELECT COUNT(*) FROM product_images WHERE product_id=?", (pid,)).fetchone()[0]
-                for photo in request.files.getlist("photos"):
-                    if not photo or not photo.filename: continue
-                    ext = Path(secure_filename(photo.filename)).suffix.lower()
-                    if ext not in allowed_extensions:
-                        flash("Formato não aceito. Use PNG, JPG, WEBP ou GIF.", "error")
-                        continue
-                    if (1 if main else 0) + extra_count >= 10:
-                        flash("Limite de 10 fotos por produto atingido.", "error")
-                        break
+                available_slots = max(0, 10 - (1 if main else 0) - extra_count)
+                if len(pending_photos) > available_slots:
+                    db.rollback()
+                    flash("Limite de 10 fotos por produto. Remova fotos antes de adicionar novas.", "error")
+                    return redirect(request.url)
+                for photo, ext in pending_photos:
                     filename = uuid.uuid4().hex + ext
                     photo.save(upload_dir / filename)
                     if not main:
@@ -769,7 +916,7 @@ def create_app(test_config=None):
                 flash("Produto salvo.", "success")
                 return redirect(url_for("products"))
             extras = db.execute("SELECT id, filename FROM product_images WHERE product_id=? ORDER BY id", (product_id,)).fetchall() if product_id else []
-            categories = db.execute("""SELECT c.name, COUNT(p.id) AS product_count FROM categories c LEFT JOIN products p ON LOWER(TRIM(p.category)) = LOWER(TRIM(c.name)) GROUP BY c.id, c.name ORDER BY c.name COLLATE NOCASE""").fetchall()
+            categories = category_options()
             return render_template("product_form.html", product=product, product_photos=extras, categories=categories)
         finally:
             db.close()
@@ -819,9 +966,10 @@ def create_app(test_config=None):
                 photo = request.files.get("ready_image")
                 filename = ""
                 if photo and photo.filename:
-                    ext = Path(secure_filename(photo.filename)).suffix.lower()
-                    if ext not in allowed_extensions:
-                        flash("Imagem inválida. Use PNG, JPG, WEBP ou GIF.", "error")
+                    try:
+                        ext = validate_image_upload(photo)
+                    except ValueError as exc:
+                        flash(str(exc), "error")
                         return redirect(url_for("content", tipo=content_type, view="new"))
                     filename = uuid.uuid4().hex + ext
                     photo.save(upload_dir / filename)
