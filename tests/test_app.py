@@ -23,6 +23,37 @@ def csrf(client, path):
     return match.group(1)
 
 
+def test_get_product_offer_by_ids_queries_api_and_matches_ids():
+    from shopee_affiliate import get_product_offer_by_ids
+
+    class FakeClient:
+        def request(self, query, variables=None, operation_name=None):
+            assert "itemId: $itemId" in query
+            assert variables == {"itemId": 456, "page": 1, "limit": 10, "shopId": 123}
+            assert operation_name == "ProductOfferById"
+            return {"productOfferV2": {"nodes": [
+                {"itemId": 999, "shopId": 123, "productName": "Outro"},
+                {"itemId": 456, "shopId": 123, "productName": "Tênis",
+                 "priceMin": "89.90", "commissionRate": "0.15"},
+            ]}}
+
+    offer = get_product_offer_by_ids(FakeClient(), item_id="456", shop_id="123")
+    assert offer["productName"] == "Tênis"
+    assert offer["priceMin"] == "89.90"
+
+
+def test_get_product_offer_by_ids_returns_none_when_product_not_in_offers():
+    from shopee_affiliate import get_product_offer_by_ids
+
+    class FakeClient:
+        def request(self, query, variables=None, operation_name=None):
+            return {"productOfferV2": {"nodes": [
+                {"itemId": 789, "shopId": 123, "productName": "Outro"},
+            ]}}
+
+    assert get_product_offer_by_ids(FakeClient(), item_id=456, shop_id=123) is None
+
+
 def test_health_endpoint(tmp_path):
     app = make_app(tmp_path)
     response = app.test_client().get("/health")
