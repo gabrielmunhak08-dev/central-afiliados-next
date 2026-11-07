@@ -1,83 +1,114 @@
 <!doctype html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR" data-theme="dark" data-font="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0e14">
   <title>{% block title %}Central de Afiliados{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261107a">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261107b">
   <script>
     (function () {
       try {
-        var theme = localStorage.getItem('central-theme') || 'dark';
-        var font = localStorage.getItem('central-font') || 'system';
-        document.documentElement.dataset.theme = theme;
-        document.documentElement.dataset.font = font;
+        var theme = localStorage.getItem('central-theme');
+        var font = localStorage.getItem('central-font');
+        document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.font = ['system', 'modern', 'readable'].includes(font) ? font : 'system';
       } catch (e) {}
     })();
   </script>
 </head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') if g.user else url_for('login') }}" aria-label="Central de Afiliados, início">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8"/><path d="m8 12 2.5 2.5L16.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span class="brand-copy"><strong>Central<span class="brand-accent">.</span></strong><small>AFILIADOS</small></span>
-    </a>
-    {% if g.user %}
-    <button class="mobile-menu-button" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="mobile-drawer"><span aria-hidden="true">☰</span><span>Menu</span></button>
-    <nav class="top-nav" aria-label="Navegação principal">
-      <a href="{{ url_for('dashboard') }}" class="top-nav-link">Visão geral</a>
-      <a href="{{ url_for('products') }}" class="top-nav-link">Produtos</a>
-      <a href="{{ url_for('content') }}" class="top-nav-link">Marketing</a>
-      <a href="{{ url_for('calendar') }}" class="top-nav-link">Calendário</a>
-    </nav>
-    <button class="topbar-collapse-button" type="button" aria-expanded="true" aria-controls="topbar-optional" title="Recolher barra"><span class="collapse-button-icon" aria-hidden="true">⌃</span><span class="collapse-button-label">Recolher barra</span></button>
-    <div class="account" id="topbar-optional">
-      <details class="appearance-menu">
-        <summary class="icon-button" aria-label="Configurações de aparência" title="Aparência e fonte"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 2.94-.08-.02a1.7 1.7 0 0 0-1.8.4l-.06.06h-3.4l-.02-.08a1.7 1.7 0 0 0-1.25-1.3 1.7 1.7 0 0 0-1.8.4l-.06.06-2.94-1.7.02-.08a1.7 1.7 0 0 0-.4-1.8l-.06-.06v-3.4l.08-.02a1.7 1.7 0 0 0 1.3-1.25 1.7 1.7 0 0 0-.4-1.8l-.06-.06 1.7-2.94.08.02a1.7 1.7 0 0 0 1.8-.4l.06-.06h3.4l.02.08a1.7 1.7 0 0 0 1.25 1.3 1.7 1.7 0 0 0 1.8-.4l.06-.06 2.94 1.7-.02.08a1.7 1.7 0 0 0 .4 1.8l.06.06v3.4l-.08.02a1.7 1.7 0 0 0-1.3 1.25Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" transform="translate(-1 -1)"/></svg></summary>
-        <div class="appearance-panel">
-          <div class="appearance-panel-heading"><strong>Aparência</strong><span>Personalize sua central</span></div>
-          <label class="appearance-label">Tema</label>
-          <div class="theme-options">
-            <button type="button" class="theme-option" data-set-theme="dark"><span class="theme-preview theme-preview-dark"></span>Escuro</button>
-            <button type="button" class="theme-option" data-set-theme="light"><span class="theme-preview theme-preview-light"></span>Claro</button>
-          </div>
-          <label class="appearance-label" for="font-choice">Fonte</label>
-          <select id="font-choice" class="font-choice">
-            <option value="system">Padrão</option>
-            <option value="modern">Moderna</option>
-            <option value="readable">Leitura fácil</option>
-          </select>
-          <p class="appearance-note">Suas preferências ficam salvas neste navegador.</p>
-        </div>
-      </details>
-      <span class="user-pill"><span class="user-dot"></span>{{ g.user['username'] }}</span>
-      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="logout-button" type="submit">Sair</button></form>
+<body class="{% if g.user %}has-sidebar{% endif %}">
+{% if g.user %}
+  <aside class="sidebar" id="app-sidebar" aria-label="Navegação principal">
+    <div class="sidebar-brand-row">
+      <a class="brand sidebar-brand" href="{{ url_for('dashboard') }}" aria-label="Central de Afiliados, início">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8"/><path d="m8 12 2.5 2.5L16.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-copy"><strong>Central<span class="brand-accent">.</span></strong><small>AFILIADOS</small></span>
+      </a>
+      <button class="sidebar-collapse-button" id="sidebar-collapse-button" type="button" aria-label="Recolher menu lateral" aria-expanded="true" title="Recolher menu lateral">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M9 4v16M14 9l-3 3 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </div>
-    <div class="drawer-backdrop" data-close-drawer></div>
-    <aside class="mobile-drawer" id="mobile-drawer" aria-label="Menu principal" aria-hidden="true">
-      <div class="drawer-heading"><span class="drawer-brand">Central<span>.</span> Afiliados</span><button class="drawer-close" type="button" aria-label="Fechar menu" data-close-drawer>×</button></div>
-      <nav class="drawer-links" aria-label="Navegação móvel">
-        <a href="{{ url_for('dashboard') }}"><span class="drawer-icon">⌂</span>Visão geral</a>
-        <a href="{{ url_for('products') }}"><span class="drawer-icon">▦</span>Produtos</a>
-        <a href="{{ url_for('content') }}"><span class="drawer-icon">✦</span>Marketing</a>
-        <a href="{{ url_for('calendar') }}"><span class="drawer-icon">▣</span>Calendário</a>
-      </nav>
-      <div class="drawer-footer">
-        <details class="drawer-appearance"><summary><span class="drawer-icon">⚙</span>Aparência</summary>
-          <div class="drawer-appearance-options">
-            <button type="button" data-set-theme="dark">Tema escuro</button><button type="button" data-set-theme="light">Tema claro</button>
-            <label for="drawer-font-choice">Fonte</label><select id="drawer-font-choice" class="font-choice"><option value="system">Padrão</option><option value="modern">Moderna</option><option value="readable">Leitura fácil</option></select>
+    <p class="sidebar-section-label">ESPAÇO DE TRABALHO</p>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" data-sidebar-link href="{{ url_for('dashboard') }}" title="Visão geral">
+        <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.7" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="3.5" width="7" height="4" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="10.5" width="7" height="10" rx="1.7" stroke="currentColor" stroke-width="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.7" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="sidebar-link-label">Visão geral</span>
+      </a>
+      <a class="sidebar-link" data-sidebar-link href="{{ url_for('products') }}" title="Produtos">
+        <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 8.5 4.6v8.8L12 21l-8.5-4.6V7.6L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m3.8 7.8 8.2 4.5 8.2-4.5M12 12.3V21" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span><span class="sidebar-link-label">Produtos</span>
+      </a>
+      <a class="sidebar-link" data-sidebar-link href="{{ url_for('content') }}" title="Marketing">
+        <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7"/><circle cx="17.5" cy="6.8" r="1" fill="currentColor"/></svg></span><span class="sidebar-link-label">Marketing</span>
+      </a>
+      <a class="sidebar-link" data-sidebar-link href="{{ url_for('calendar') }}" title="Calendário">
+        <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="16" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 14h2m4 0h2m-8 3h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span class="sidebar-link-label">Calendário</span>
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="sidebar-bottom-line"></div>
+      <span class="sidebar-bottom-mark"><span class="sidebar-bottom-dot"></span> Central pronta para organizar</span>
+    </div>
+  </aside>
+{% endif %}
+
+<div class="app-shell">
+  <header class="topbar">
+    {% if g.user %}
+      <a class="brand topbar-mobile-brand" href="{{ url_for('dashboard') }}" aria-label="Central de Afiliados, início">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8"/><path d="m8 12 2.5 2.5L16.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-copy"><strong>Central<span class="brand-accent">.</span></strong><small>AFILIADOS</small></span>
+      </a>
+      <button class="mobile-menu-button" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="mobile-drawer"><span aria-hidden="true">☰</span><span>Menu</span></button>
+      <div class="topbar-context"><span class="topbar-context-dot"></span> SEU ESPAÇO DE TRABALHO</div>
+      <div class="account" id="topbar-optional">
+        <details class="appearance-menu">
+          <summary class="icon-button" aria-label="Configurações de aparência" title="Configurações"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.3 2.8h3.4l.55 2.05a7.8 7.8 0 0 1 1.55.9l2.02-.64 1.7 2.95-1.48 1.54c.12.57.18 1.1.18 1.7l1.48 1.54-1.7 2.95-2.02-.64c-.48.38-1 .67-1.55.9l-.55 2.05h-3.4l-.55-2.05a7.8 7.8 0 0 1-1.55-.9l-2.02.64-1.7-2.95 1.48-1.54a7.8 7.8 0 0 1 0-1.7L4.48 8.06l1.7-2.95 2.02.64c.48-.38 1-.67 1.55-.9l.55-2.05Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11.3" r="3" stroke="currentColor" stroke-width="1.6"/></svg></summary>
+          <div class="appearance-panel">
+            <div class="appearance-panel-heading"><strong>Aparência</strong><span>Personalize sua central</span></div>
+            <label class="appearance-label">Tema</label>
+            <div class="theme-options">
+              <button type="button" class="theme-option" data-set-theme="dark"><span class="theme-preview theme-preview-dark"></span>Escuro</button>
+              <button type="button" class="theme-option" data-set-theme="light"><span class="theme-preview theme-preview-light"></span>Claro</button>
+            </div>
+            <label class="appearance-label" for="font-choice">Fonte</label>
+            <select id="font-choice" class="font-choice">
+              <option value="system">Padrão</option><option value="modern">Moderna</option><option value="readable">Leitura fácil</option>
+            </select>
+            <p class="appearance-note">As preferências ficam salvas neste navegador.</p>
           </div>
         </details>
-        <div class="drawer-user"><span class="user-dot"></span><span>{{ g.user['username'] }}</span></div>
-        <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="drawer-logout" type="submit">↪ &nbsp; Sair da conta</button></form>
+        <span class="user-pill"><span class="user-dot"></span>{{ g.user['username'] }}</span>
+        <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="logout-button" type="submit">Sair</button></form>
       </div>
-    </aside>
+      <div class="drawer-backdrop" data-close-drawer></div>
+      <aside class="mobile-drawer" id="mobile-drawer" aria-label="Menu principal" aria-hidden="true">
+        <div class="drawer-heading"><span class="drawer-brand">Central<span>.</span> Afiliados</span><button class="drawer-close" type="button" aria-label="Fechar menu" data-close-drawer>×</button></div>
+        <nav class="drawer-links" aria-label="Navegação móvel">
+          <a href="{{ url_for('dashboard') }}"><span class="drawer-icon">▦</span>Visão geral</a>
+          <a href="{{ url_for('products') }}"><span class="drawer-icon">◇</span>Produtos</a>
+          <a href="{{ url_for('content') }}"><span class="drawer-icon">✧</span>Marketing</a>
+          <a href="{{ url_for('calendar') }}"><span class="drawer-icon">▣</span>Calendário</a>
+        </nav>
+        <div class="drawer-footer">
+          <details class="drawer-appearance"><summary><span class="drawer-icon">⚙</span>Aparência</summary>
+            <div class="drawer-appearance-options">
+              <button type="button" data-set-theme="dark">Tema escuro</button><button type="button" data-set-theme="light">Tema claro</button>
+              <label for="drawer-font-choice">Fonte</label><select id="drawer-font-choice" class="font-choice"><option value="system">Padrão</option><option value="modern">Moderna</option><option value="readable">Leitura fácil</option></select>
+            </div>
+          </details>
+          <div class="drawer-user"><span class="user-dot"></span><span>{{ g.user['username'] }}</span></div>
+          <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="drawer-logout" type="submit">↪ &nbsp; Sair da conta</button></form>
+        </div>
+      </aside>
     {% else %}
-    <span class="version">ACESSO PRIVADO</span>
+      <a class="brand" href="{{ url_for('login') }}" aria-label="Central de Afiliados">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8"/><path d="m8 12 2.5 2.5L16.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-copy"><strong>Central<span class="brand-accent">.</span></strong><small>AFILIADOS</small></span>
+      </a>
+      <span class="version">ACESSO PRIVADO</span>
     {% endif %}
   </header>
+
   <main class="page">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
@@ -85,98 +116,97 @@
     {% block content %}{% endblock %}
   </main>
   <footer class="app-footer"><span class="footer-mark">C.</span><span>Central de Afiliados</span><span class="footer-separator">·</span><span>Seu conteúdo, organizado.</span></footer>
-  <script>
-    (function () {
-      var root = document.documentElement;
-      function setTheme(theme) {
-        root.dataset.theme = theme;
-        try { localStorage.setItem('central-theme', theme); } catch (e) {}
-        document.querySelectorAll('[data-set-theme]').forEach(function (button) {
-          button.setAttribute('aria-pressed', String(button.dataset.setTheme === theme));
-        });
-        var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = theme === 'light' ? '#f4f6fa' : '#0b0e14';
-      }
-      function setFont(font) {
-        root.dataset.font = font;
-        try { localStorage.setItem('central-font', font); } catch (e) {}
-      }
-      document.querySelectorAll('[data-set-theme]').forEach(function (button) {
-        button.addEventListener('click', function () { setTheme(button.dataset.setTheme); });
-      });
-      var fontSelect = document.getElementById('font-choice');
-      if (fontSelect) {
-        try { fontSelect.value = localStorage.getItem('central-font') || 'system'; } catch (e) {}
-        fontSelect.addEventListener('change', function () { setFont(fontSelect.value); });
-      }
-      setTheme(root.dataset.theme || 'dark');
-      setFont(root.dataset.font || 'system');
+</div>
 
-      // Recolher/expandir a navegação do cabeçalho no desktop.
-      var collapseButton = document.querySelector('.topbar-collapse-button');
-      var topbar = document.querySelector('.topbar');
-      function setTopbarCollapsed(collapsed) {
-        if (!topbar || !collapseButton) return;
-        document.body.classList.toggle('topbar-collapsed', collapsed);
-        collapseButton.setAttribute('aria-expanded', String(!collapsed));
-        collapseButton.setAttribute('title', collapsed ? 'Expandir barra' : 'Recolher barra');
-        var label = collapseButton.querySelector('.collapse-button-label');
-        var icon = collapseButton.querySelector('.collapse-button-icon');
-        if (label) label.textContent = collapsed ? 'Expandir barra' : 'Recolher barra';
-        if (icon) icon.textContent = collapsed ? '⌄' : '⌃';
-        try { localStorage.setItem('central-topbar-collapsed', collapsed ? '1' : '0'); } catch (e) {}
-      }
-      if (collapseButton) {
-        var savedCollapse = false;
-        try { savedCollapse = localStorage.getItem('central-topbar-collapsed') === '1'; } catch (e) {}
-        setTopbarCollapsed(savedCollapse);
-        collapseButton.addEventListener('click', function () {
-          setTopbarCollapsed(!document.body.classList.contains('topbar-collapsed'));
-        });
-      }
-      document.querySelectorAll('.top-nav-link').forEach(function (link) {
-        if (link.pathname.replace(/\\/$/, '') === window.location.pathname.replace(/\\/$/, '')) {
-          link.classList.add('active');
-          link.setAttribute('aria-current', 'page');
-        }
-      });
-      var drawer = document.getElementById('mobile-drawer');
-      var menuButton = document.querySelector('.mobile-menu-button');
-      var drawerFont = document.getElementById('drawer-font-choice');
-      function closeDrawer() {
-        if (!drawer) return;
-        drawer.classList.remove('is-open');
-        document.body.classList.remove('drawer-open');
-        drawer.setAttribute('aria-hidden', 'true');
-        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
-      }
-      if (drawer && menuButton) {
-        menuButton.addEventListener('click', function () {
-          drawer.classList.add('is-open');
-          document.body.classList.add('drawer-open');
-          drawer.setAttribute('aria-hidden', 'false');
-          menuButton.setAttribute('aria-expanded', 'true');
-        });
-        document.querySelectorAll('[data-close-drawer]').forEach(function (el) { el.addEventListener('click', closeDrawer); });
-        drawer.querySelectorAll('.drawer-links a').forEach(function (link) {
-          if (link.pathname === window.location.pathname) link.classList.add('active');
-          link.addEventListener('click', closeDrawer);
-        });
-        document.addEventListener('keydown', function (event) { if (event.key === 'Escape') closeDrawer(); });
-      }
-      if (drawerFont) {
-        try { drawerFont.value = localStorage.getItem('central-font') || 'system'; } catch (e) {}
-        drawerFont.addEventListener('change', function () {
-          setFont(drawerFont.value);
-          var desktopFont = document.getElementById('font-choice');
-          if (desktopFont) desktopFont.value = drawerFont.value;
-        });
-      }
-      document.addEventListener('click', function (event) {
-        var menu = document.querySelector('.appearance-menu');
-        if (menu && !menu.contains(event.target)) menu.removeAttribute('open');
-      });
-    })();
-  </script>
+<script>
+(function () {
+  var root = document.documentElement;
+  var themeMeta = document.querySelector('meta[name="theme-color"]');
+  function setTheme(theme) {
+    theme = theme === 'light' ? 'light' : 'dark';
+    root.dataset.theme = theme;
+    try { localStorage.setItem('central-theme', theme); } catch (e) {}
+    document.querySelectorAll('[data-set-theme]').forEach(function (button) {
+      button.setAttribute('aria-pressed', String(button.dataset.setTheme === theme));
+    });
+    if (themeMeta) themeMeta.content = theme === 'light' ? '#f3f5f9' : '#0b0e14';
+  }
+  function setFont(font) {
+    font = ['system', 'modern', 'readable'].includes(font) ? font : 'system';
+    root.dataset.font = font;
+    try { localStorage.setItem('central-font', font); } catch (e) {}
+    document.querySelectorAll('.font-choice').forEach(function (select) {
+      if (select.value !== font) select.value = font;
+    });
+  }
+  document.querySelectorAll('[data-set-theme]').forEach(function (button) {
+    button.addEventListener('click', function () { setTheme(button.dataset.setTheme); });
+  });
+  document.querySelectorAll('.font-choice').forEach(function (select) {
+    select.addEventListener('change', function () { setFont(select.value); });
+  });
+  var initialTheme = 'dark', initialFont = 'system';
+  try {
+    initialTheme = localStorage.getItem('central-theme') || 'dark';
+    initialFont = localStorage.getItem('central-font') || 'system';
+  } catch (e) {}
+  setTheme(initialTheme);
+  setFont(initialFont);
+
+  // Navegação lateral: o recolhimento afeta a barra esquerda, não o cabeçalho.
+  var collapseButton = document.getElementById('sidebar-collapse-button');
+  function setSidebarCollapsed(collapsed) {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    if (!collapseButton) return;
+    collapseButton.setAttribute('aria-expanded', String(!collapsed));
+    collapseButton.setAttribute('aria-label', collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral');
+    collapseButton.title = collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral';
+  }
+  if (collapseButton) {
+    var collapsed = false;
+    try { collapsed = localStorage.getItem('central-sidebar-collapsed') === '1'; } catch (e) {}
+    setSidebarCollapsed(collapsed);
+    collapseButton.addEventListener('click', function () {
+      var next = !document.body.classList.contains('sidebar-collapsed');
+      setSidebarCollapsed(next);
+      try { localStorage.setItem('central-sidebar-collapsed', next ? '1' : '0'); } catch (e) {}
+    });
+  }
+
+  var currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('[data-sidebar-link], .drawer-links a').forEach(function (link) {
+    var linkPath = link.pathname.replace(/\/$/, '') || '/';
+    if (linkPath === currentPath) {
+      link.classList.add('active');
+      link.setAttribute('aria-current', 'page');
+    }
+  });
+
+  var drawer = document.getElementById('mobile-drawer');
+  var menuButton = document.querySelector('.mobile-menu-button');
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove('is-open');
+    document.body.classList.remove('drawer-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+  }
+  if (drawer && menuButton) {
+    menuButton.addEventListener('click', function () {
+      drawer.classList.add('is-open');
+      document.body.classList.add('drawer-open');
+      drawer.setAttribute('aria-hidden', 'false');
+      menuButton.setAttribute('aria-expanded', 'true');
+    });
+    document.querySelectorAll('[data-close-drawer]').forEach(function (el) { el.addEventListener('click', closeDrawer); });
+    drawer.querySelectorAll('.drawer-links a').forEach(function (link) { link.addEventListener('click', closeDrawer); });
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') closeDrawer(); });
+  }
+  var appearance = document.querySelector('.appearance-menu');
+  document.addEventListener('click', function (event) {
+    if (appearance && !appearance.contains(event.target)) appearance.removeAttribute('open');
+  });
+})();
+</script>
 </body>
 </html>
