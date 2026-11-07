@@ -8,6 +8,7 @@ def make_app(tmp_path):
         "TESTING": True,
         "SECRET_KEY": "test-only-secret",
         "DATABASE": str(tmp_path / "test.sqlite3"),
+        "UPLOAD_FOLDER": str(tmp_path / "uploads"),
     })
 
 
