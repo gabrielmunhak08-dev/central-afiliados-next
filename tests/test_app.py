@@ -266,7 +266,7 @@ def test_shopee_search_page_renders_mocked_offers_without_saving(tmp_path, monke
     assert response.status_code == 200
     assert "Tênis de teste" in html
     assert "119,80" in html
-    assert "Abrir link de oferta" in html
+    assert "Conferir link de afiliado" in html
     import sqlite3
     conn = sqlite3.connect(app.config["DATABASE"])
     try:
