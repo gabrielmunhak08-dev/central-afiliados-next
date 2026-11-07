@@ -984,14 +984,21 @@ def create_app(test_config=None):
                 },
             )
             opener = urllib.request.build_opener(ShopeeRedirectHandler())
-            with opener.open(req, timeout=15) as response:
-                resolved_product_url = response.geturl()
-                if not is_allowed_shopee_url(resolved_product_url):
-                    raise ValueError("redirect host not allowed")
-                raw_html = response.read(3_000_001)
-                if len(raw_html) > 3_000_000:
-                    raise ValueError("A página da Shopee excedeu o tamanho permitido.")
-                html = raw_html.decode("utf-8", errors="replace")
+            resolved_product_url = link
+            html = ""
+            try:
+                with opener.open(req, timeout=15) as response:
+                    resolved_product_url = response.geturl()
+                    if not is_allowed_shopee_url(resolved_product_url):
+                        raise ValueError("redirect host not allowed")
+                    raw_html = response.read(3_000_001)
+                    if len(raw_html) > 3_000_000:
+                        raise ValueError("A página da Shopee excedeu o tamanho permitido.")
+                    html = raw_html.decode("utf-8", errors="replace")
+            except Exception:
+                # A Shopee pode bloquear HTML automatizado. Ainda tentamos a API
+                # usando os IDs presentes no link original ou no destino resolvido.
+                html = ""
 
             parser = MetaParser()
             parser.feed(html)

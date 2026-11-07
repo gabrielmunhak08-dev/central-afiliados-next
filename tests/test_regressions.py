@@ -202,7 +202,7 @@ def test_shopee_redirect_handler_blocks_non_shopee_destination(tmp_path, monkeyp
 
     assert response.status_code == 200
     assert rejected["value"] is True
-    assert "Não consegui ler os dados desta página da Shopee" in response.get_data(as_text=True)
+    assert "A Shopee bloqueou ou não incluiu os dados do produto no HTML recebido" in response.get_data(as_text=True)
 
 
 @pytest.mark.parametrize("field,value", [
