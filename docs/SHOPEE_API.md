@@ -1,32 +1,27 @@
 # Integração com a Shopee Affiliate Open API
 
-## Estado desta etapa
+## Estado atual
 
-Esta branch adiciona a camada de comunicação GraphQL assinada, uma função de pesquisa `productOfferV2`, uma tela privada em `/produtos/buscar-shopee` e testes unitários. A tela mostra resultados e links, mas não grava produtos no catálogo. Nenhuma alteração no esquema do banco foi feita.
+O projeto contém um cliente GraphQL assinado em `shopee_affiliate.py` e uma tela privada em `/produtos/buscar-shopee`. A busca usa a operação `productOfferV2`, mostra até 10 resultados por consulta e não grava produtos no catálogo automaticamente.
+
+Os testes simulam as respostas da API. Ainda é necessário validar a conexão com credenciais reais e permissões autorizadas da conta.
 
 ## Credenciais
 
-Configure as variáveis de ambiente no ambiente em que a Central será executada. A aplicação também carrega um arquivo local `.env` na pasta do projeto (esse arquivo está ignorado pelo Git):
+Configure no arquivo `.env` local do notebook ou nas variáveis de ambiente:
 
-1. Copie `.env.example` para `.env`.
-2. Preencha `SHOPEE_APP_ID` e `SHOPEE_APP_SECRET` apenas no arquivo local `.env` ou no ambiente do servidor.
-3. Reinicie a aplicação para carregar as configurações.
+- `SHOPEE_APP_ID`: AppID disponibilizado na Open API.
+- `SHOPEE_APP_SECRET`: segredo da aplicação gerado pela Shopee; não é a senha da conta.
 
-Não envie o arquivo `.env` ao GitHub.
-
-
-- `SHOPEE_APP_ID`: AppID mostrado na página Open API da Shopee.
-- `SHOPEE_APP_SECRET`: senha/secret da API gerada pela Shopee — não é a senha de login da conta.
-
-Não coloque os valores em arquivos versionados, templates, banco SQLite, mensagens, prints ou commits. Se as credenciais já foram expostas, redefina-as no painel da Shopee antes de conectar.
+Os segredos não devem ser enviados pelo chat, incluídos em templates, no banco, no Git ou em capturas de tela. O arquivo `.env` está no `.gitignore`.
 
 ## Endpoint e assinatura
 
-O cliente envia uma requisição HTTP POST para:
+Endpoint utilizado:
 
 `https://open-api.affiliate.shopee.com.br/graphql`
 
-O corpo JSON é serializado uma vez e a mesma string é usada na assinatura SHA-256:
+O corpo JSON é serializado uma única vez e a mesma string é usada na assinatura SHA-256:
 
 `SHA256(AppID + timestamp Unix em segundos + corpo JSON exato + secret)`
 
@@ -34,23 +29,16 @@ O cabeçalho segue o formato:
 
 `Authorization: SHA256 Credential=..., Timestamp=..., Signature=...`
 
-O cliente não registra credenciais e substitui erros de transporte por mensagens genéricas. As operações GraphQL devem ser confirmadas no explorador/documentação da própria Shopee, pois a conta pode ter permissões específicas.
+A camada de transporte substitui erros HTTP e GraphQL por mensagens resumidas, sem incluir cabeçalhos ou segredos.
 
-## Próximos passos
+## Busca e cadastro
 
-1. Executar os testes unitários sem chamar a API real.
-2. Configurar as duas variáveis de ambiente localmente, sem as enviar no chat.
-3. Fazer um teste controlado com uma consulta simples confirmada no explorador oficial.
-4. Adicionar uma página privada de configuração/status e uma ação de teste na Central.
-5. Conectar a função de busca à tela de pesquisa de produtos, mantendo a seleção/cadastro manual até o usuário confirmar cada item.
-6. Implementar geração de links curtos depois de confirmar os campos da mutation no Explorer brasileiro.
+- A pesquisa exige palavra-chave e envia `keyword`, `sortType`, `page` e `limit`.
+- A tela exibe nome, loja, preço, vendas, avaliação, desconto e comissão quando a API os retorna.
+- Resultados não são salvos automaticamente; confira preço e comissão no painel de afiliados antes de cadastrar ou publicar.
+- A importação por link do catálogo é um fluxo separado. Ela tenta ler dados estruturados presentes na página da Shopee; não extrai comissão de texto genérico e pode não funcionar em páginas que exigem JavaScript ou bloqueiam acesso automatizado.
+- Ainda falta a ação para selecionar um resultado da API e registrá-lo diretamente no catálogo com confirmação.
 
 ## Testes
 
-Execute:
-
-```bash
-python -m pytest -q
-```
-
-Os testes da camada Shopee simulam a resposta HTTP e não precisam de credenciais reais.
+Execute `python -m pytest -q`. Os testes do cliente simulam HTTP e GraphQL; não precisam de credenciais reais e não substituem o teste de conexão com a conta.
