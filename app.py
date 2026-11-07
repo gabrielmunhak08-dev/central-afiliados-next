@@ -1029,9 +1029,29 @@ def create_app(test_config=None):
             # pois não é um campo disponível no ProductOfferV2.
             import re as _re
             from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, get_product_offer_by_ids
-            ids = _re.search(r"/product/(\d+)/(\d+)", resolved_product_url)
-            if not ids:
-                ids = _re.search(r"-i\.(\d+)\.(\d+)(?:[/?#]|$)", resolved_product_url)
+
+            # Procura os IDs tanto no link enviado quanto no destino final. Alguns links
+            # de afiliado preservam parâmetros de produto mesmo quando o redirecionamento
+            # automático da Shopee falha. Nunca trata o código curto como itemId.
+            ids = None
+            candidate_urls = [resolved_product_url, link]
+            for candidate_url in candidate_urls:
+                parsed_candidate = urlparse(candidate_url)
+                ids = _re.search(r"/product/(\d+)/(\d+)", candidate_url)
+                if not ids:
+                    ids = _re.search(r"-i\.(\d+)\.(\d+)(?:[/?#]|$)", candidate_url)
+                if not ids:
+                    query_values = {}
+                    for part in parsed_candidate.query.split("&"):
+                        if "=" in part:
+                            key, value = part.split("=", 1)
+                            query_values[key.lower()] = value
+                    shop_value = query_values.get("shopid") or query_values.get("shop_id")
+                    item_value = query_values.get("itemid") or query_values.get("item_id")
+                    if shop_value and item_value and shop_value.isdigit() and item_value.isdigit():
+                        ids = type("ProductIds", (), {"group": lambda self, i, a=(shop_value, item_value): a[i - 1]})()
+                if ids:
+                    break
             if ids:
                 shop_id, item_id = ids.group(1), ids.group(2)
                 try:
