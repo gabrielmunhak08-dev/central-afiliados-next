@@ -16,23 +16,6 @@
   {% if q or category %}<a class="clear-product-filter" href="{{ url_for('products') }}">Limpar filtros</a>{% endif %}
 </form>
 
-<section class="category-catalog" aria-label="Categorias do catálogo">
-  <div class="category-catalog-heading">
-    <div><p class="eyebrow">ORGANIZAÇÃO</p><h2>Catálogos por categoria</h2></div>
-    <span>{{ product_total }} produto(s) no total</span>
-  </div>
-  <div class="category-chip-list">
-    <a class="category-chip {{ 'active' if not category else '' }}" href="{{ url_for('products', q=q or None) }}">
-      <span class="category-chip-name">Todas</span><strong>{{ product_total }}</strong>
-    </a>
-    {% for cat in categories %}
-    <a class="category-chip {{ 'active' if category|lower == cat.name|lower else '' }}" href="{{ url_for('products', categoria=cat.name, q=q or None) }}">
-      <span class="category-chip-name">{{ cat.name }}</span><strong>{{ cat.product_count }}</strong>
-    </a>
-    {% endfor %}
-  </div>
-</section>
-
 {% if products %}
 <div class="products-grid">
 {% for product in products %}
