@@ -47,7 +47,7 @@
     <label class="agenda-field">Data e horário
       <input type="datetime-local" name="due_at" required value="{{ selected_day.isoformat() }}T18:00">
     </label>
-    <label class="agenda-field">Produto relacionado <span class="agenda-optional">(opcional)</span>
+    <label class="agenda-field"><span class="agenda-field-label">Produto relacionado <span class="agenda-optional">(opcional)</span></span>
       <select name="product_id"><option value="">Nenhum produto</option>{% for product in products %}<option value="{{ product.id }}">{{ product.name }}</option>{% endfor %}</select>
     </label>
     <label class="agenda-field agenda-field-wide">Detalhes / o que precisa ser feito
