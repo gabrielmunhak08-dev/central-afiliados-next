@@ -8,6 +8,7 @@ def make_app(tmp_path):
         "TESTING": True,
         "SECRET_KEY": "test-only-secret",
         "DATABASE": str(tmp_path / "test.sqlite3"),
+        "UPLOAD_FOLDER": str(tmp_path / "uploads"),
     })
 
 
@@ -133,6 +134,11 @@ def test_catalog_creates_product_with_separate_affiliate_link(tmp_path):
 def test_catalog_accepts_multiple_product_photos(tmp_path):
     from io import BytesIO
     import sqlite3
+    from PIL import Image
+
+    image_buffer = BytesIO()
+    Image.new("RGB", (2, 2), "orange").save(image_buffer, format="PNG")
+    valid_png = image_buffer.getvalue()
 
     app = make_app(tmp_path)
     client = app.test_client()
@@ -152,9 +158,9 @@ def test_catalog_accepts_multiple_product_photos(tmp_path):
         "price": "25,00",
         "affiliate_link": "https://shopee.com.br/produto-teste",
         "photos": [
-            (BytesIO(b"fake-image-one"), "foto1.jpg"),
-            (BytesIO(b"fake-image-two"), "foto2.png"),
-            (BytesIO(b"fake-image-three"), "foto3.webp"),
+            (BytesIO(valid_png), "foto1.jpg"),
+            (BytesIO(valid_png), "foto2.png"),
+            (BytesIO(valid_png), "foto3.webp"),
         ],
     }, content_type="multipart/form-data", follow_redirects=True)
 

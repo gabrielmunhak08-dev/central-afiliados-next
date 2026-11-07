@@ -8,6 +8,7 @@ instance/
 *.sqlite3
 *.db
 uploads/
+static/uploads/
 generated/
 .pytest_cache/
 .coverage
