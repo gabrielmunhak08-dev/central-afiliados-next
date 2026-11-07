@@ -1,68 +1,147 @@
 {% extends "base.html" %}
-{% block title %}Agenda · Central de Afiliados{% endblock %}
+{% block title %}Calendário · Central de Afiliados{% endblock %}
 {% block content %}
-<section class="section-heading">
-  <div><p class="eyebrow">SUA ROTINA</p><h1>Minha <span class="accent">agenda</span></h1><p class="muted">Crie compromissos, escolha uma cor e organize a semana.</p></div>
-</section>
-<div class="calendar-header">
-  <div class="calendar-month-nav">
-    <a href="{{ url_for('calendar', dia=prev_day.isoformat()) }}" aria-label="Dia anterior">‹</a>
-    <h2>{{ selected_day.strftime('%d/%m/%Y') }}</h2>
-    <a href="{{ url_for('calendar', dia=next_day.isoformat()) }}" aria-label="Próximo dia">›</a>
+<section class="section-heading calendar-page-heading">
+  <div><p class="eyebrow">PLANEJAMENTO</p><h1>Minha <span class="accent">agenda.</span></h1><p class="muted">Um dia de cada vez, com todos os horários organizados.</p></div>
+  <div class="calendar-stats">
+    <div class="calendar-stat"><span class="muted">Pendentes</span><strong>{{ task_stats.pending }}</strong></div>
+    <div class="calendar-stat"><span class="muted">Concluídas</span><strong>{{ task_stats.done }}</strong></div>
+    <div class="calendar-stat"><span class="muted">Atrasadas</span><strong>{{ task_stats.overdue }}</strong></div>
   </div>
-  <a class="button button-small button-quiet" href="{{ url_for('calendar') }}">Hoje</a>
-</div>
-<div class="calendar-stats">
-  <div class="calendar-stat"><span class="muted">Pendentes</span><strong>{{ task_stats.pending }}</strong></div>
-  <div class="calendar-stat"><span class="muted">Concluídas</span><strong>{{ task_stats.done }}</strong></div>
-  <div class="calendar-stat"><span class="muted">Atrasadas</span><strong>{{ task_stats.overdue }}</strong></div>
-</div>
-<div class="calendar-layout">
-  <section class="calendar-panel">
-    <h2>＋ Novo compromisso</h2>
-    <form class="calendar-form" method="post" action="{{ url_for('calendar') }}">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <label>Título<input name="title" maxlength="160" required placeholder="Ex.: Postar produto de academia"></label>
-      <label>Categoria
-        <select name="task_type"><option value="Marketing">Marketing</option><option value="Produto">Produto</option><option value="Pesquisa">Pesquisa e oportunidades</option><option value="Urgente">Urgente</option><option value="Organização">Organização</option><option value="Tarefa" selected>Outro compromisso</option></select>
-      </label>
-      <label>Cor do compromisso
-        <select name="color"><option value="yellow">Amarelo — Marketing</option><option value="blue">Azul — Produtos</option><option value="green">Verde — Pesquisa</option><option value="red">Vermelho — Urgente</option><option value="pink">Rosa — Organização</option></select>
-      </label>
-      <label>Dia e horário<input type="datetime-local" name="due_at" required value="{{ selected_day.isoformat() }}T18:00"></label>
-      <label>Produto relacionado (opcional)<select name="product_id"><option value="">Nenhum produto</option>{% for product in products %}<option value="{{ product.id }}">{{ product.name }}</option>{% endfor %}</select></label>
-      <label>Detalhes<textarea name="description" maxlength="1000" placeholder="O que precisa ser feito?"></textarea></label>
-      <button class="button" type="submit">Salvar compromisso</button>
-    </form>
-  </section>
-  <section class="calendar-panel">
-    <h2>Agenda da semana</h2>
-    <div class="calendar-week-list">
-      {% for day in week_days %}
-      <a class="calendar-week-day {{ 'selected' if day == selected_day else '' }}" href="{{ url_for('calendar', dia=day.isoformat()) }}">
-        <span>{{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][day.weekday()] }}</span><strong>{{ day.strftime('%d') }}</strong>
-        <small>{{ day_counts[day.isoformat()] }} compromisso(s)</small>
-      </a>
-      {% endfor %}
+</section>
+
+<section class="agenda-toolbar" aria-label="Navegar pela agenda">
+  <a class="agenda-day-arrow" href="{{ url_for('calendar', dia=prev_day.isoformat()) }}" aria-label="Dia anterior" title="Dia anterior">‹</a>
+  <div class="agenda-date-block">
+    <span class="eyebrow">DIA SELECIONADO</span>
+    <strong>{{ selected_day.strftime('%d/%m/%Y') }}</strong>
+    <span>{{ ['segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado','domingo'][selected_day.weekday()] }}</span>
+  </div>
+  <a class="agenda-day-arrow" href="{{ url_for('calendar', dia=next_day.isoformat()) }}" aria-label="Próximo dia" title="Próximo dia">›</a>
+  <form class="agenda-date-form" method="get" action="{{ url_for('calendar') }}">
+    <label for="agenda-date">Ir para data</label>
+    <input id="agenda-date" type="date" name="dia" value="{{ selected_day.isoformat() }}">
+    <button class="button button-small button-quiet" type="submit">Ir</button>
+  </form>
+  <a class="button button-small agenda-today-button" href="{{ url_for('calendar') }}">Hoje</a>
+</section>
+
+<details class="agenda-compose" open>
+  <summary><span class="agenda-compose-icon">＋</span><span><strong>Novo compromisso</strong><small>Defina a categoria, o horário e o que precisa ser feito.</small></span><span class="agenda-compose-chevron">⌄</span></summary>
+  <form class="agenda-form" method="post" action="{{ url_for('calendar') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <label class="agenda-field agenda-field-wide">Título do compromisso
+      <input name="title" maxlength="160" required placeholder="Ex.: Preparar Story do produto">
+    </label>
+    <label class="agenda-field">Categoria
+      <select name="task_type" id="agenda-task-type" required>
+        <option value="Marketing">Marketing</option>
+        <option value="Produto">Produtos</option>
+        <option value="Pesquisa e oportunidades">Pesquisa e oportunidades</option>
+        <option value="Urgente">Urgente</option>
+        <option value="Organização">Organização</option>
+        <option value="Outro compromisso" selected>Outro compromisso</option>
+      </select>
+      <small class="agenda-category-hint" id="agenda-category-hint">Este compromisso aparecerá em cinza na agenda.</small>
+    </label>
+    <label class="agenda-field">Data e horário
+      <input type="datetime-local" name="due_at" required value="{{ selected_day.isoformat() }}T18:00">
+    </label>
+    <label class="agenda-field">Produto relacionado <span class="agenda-optional">(opcional)</span>
+      <select name="product_id"><option value="">Nenhum produto</option>{% for product in products %}<option value="{{ product.id }}">{{ product.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="agenda-field agenda-field-wide">Detalhes / o que precisa ser feito
+      <textarea name="description" maxlength="1000" rows="3" placeholder="Anote as etapas, observações ou informações importantes."></textarea>
+    </label>
+    <div class="agenda-form-actions"><button class="button" type="submit">Salvar compromisso</button></div>
+  </form>
+</details>
+
+<section class="agenda-board" aria-label="Agenda diária, das 00 às 23 horas">
+  <div class="agenda-board-heading"><div><p class="eyebrow">LINHA DO TEMPO</p><h2>Agenda do dia</h2></div><span class="agenda-board-date">{{ selected_day.strftime('%d/%m/%Y') }}</span></div>
+  <div class="agenda-timeline">
+    {% for hour in hours %}
+    <div class="agenda-hour-row" id="hora-{{ '%02d'|format(hour) }}">
+      <div class="agenda-hour-label"><strong>{{ '%02d:00'|format(hour) }}</strong><span>{% if hour == 0 %}Início do dia{% elif hour == 12 %}Meio-dia{% elif hour == 23 %}Fim do dia{% endif %}</span></div>
+      <div class="agenda-hour-content">
+        {% for task in day_tasks if task.hour == hour %}
+        <button class="agenda-event agenda-event-{{ task.color_class }}" type="button" data-open-task="task-dialog-{{ task.id }}">
+          <span class="agenda-event-time">{{ task.time_label }}</span>
+          <span class="agenda-event-copy"><strong>{{ task.title }}</strong><small>{{ task.task_type }}</small></span>
+          <span class="agenda-event-status">{{ task.status }}</span>
+          <span class="agenda-event-open" aria-hidden="true">↗</span>
+        </button>
+        {% endfor %}
+        {% if not (day_tasks|selectattr('hour', 'equalto', hour)|list) %}
+        <span class="agenda-hour-empty">＋</span>
+        {% endif %}
+      </div>
     </div>
-    <h2 style="margin-top:22px">Compromissos do dia</h2>
-    {% if day_tasks %}
-      {% for task in day_tasks %}
-      <article class="calendar-task calendar-event calendar-event-{{ task.color|default('blue') }}">
-        <div class="calendar-event-time">{{ task.due_at[11:16] }}</div>
-        <div class="calendar-task-title">{{ task.title }}</div>
-        <div class="calendar-task-meta"><span class="calendar-pill">{{ task.task_type }}</span><span class="calendar-pill {{ 'done' if task.status == 'Concluída' else '' }}">{{ task.status }}</span></div>
-        {% if task.product_name %}<div class="calendar-task-meta">Produto: {{ task.product_name }}</div>{% endif %}
-        {% if task.description %}<div class="muted">{{ task.description }}</div>{% endif %}
-        <form method="post" action="{{ url_for('calendar_task_status', task_id=task.id) }}" class="calendar-task-actions">
-          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dia" value="{{ selected_day.isoformat() }}">
-          <select name="status" aria-label="Status do compromisso" onchange="this.form.submit()">{% for status in ['Pendente','Em andamento','Concluída'] %}<option {{ 'selected' if task.status == status else '' }}>{{ status }}</option>{% endfor %}</select>
-        </form>
-      </article>
-      {% endfor %}
-    {% else %}
-      <div class="calendar-empty">Você não tem compromissos neste dia. Escolha outro dia da semana ou adicione um novo compromisso.</div>
-    {% endif %}
-  </section>
-</div>
+    {% endfor %}
+  </div>
+</section>
+
+{% for task in day_tasks %}
+<dialog class="agenda-dialog" id="task-dialog-{{ task.id }}">
+  <div class="agenda-dialog-card">
+    <div class="agenda-dialog-top">
+      <span class="agenda-dialog-category agenda-event-{{ task.color_class }}">{{ task.task_type }}</span>
+      <button class="agenda-dialog-close" type="button" data-close-task aria-label="Fechar">×</button>
+    </div>
+    <p class="eyebrow">DETALHES DO COMPROMISSO</p>
+    <h2>{{ task.title }}</h2>
+    <div class="agenda-dialog-meta"><span>◷ {{ task.time_label }}</span><span>▣ {{ selected_day.strftime('%d/%m/%Y') }}</span><span>{{ task.status }}</span></div>
+    <div class="agenda-dialog-description">{{ task.description or 'Nenhum detalhe adicional foi informado.' }}</div>
+    {% if task.product_name %}<p class="agenda-dialog-product">Produto relacionado: <strong>{{ task.product_name }}</strong></p>{% endif %}
+    <form method="post" action="{{ url_for('calendar_task_status', task_id=task.id) }}" class="agenda-status-form">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="dia" value="{{ selected_day.isoformat() }}">
+      <label for="task-status-{{ task.id }}">Atualizar situação</label>
+      <select id="task-status-{{ task.id }}" name="status">
+        {% for status in ['Pendente','Em andamento','Concluída'] %}<option value="{{ status }}" {{ 'selected' if task.status == status else '' }}>{{ status }}</option>{% endfor %}
+      </select>
+      <button class="button" type="submit">Salvar situação</button>
+    </form>
+  </div>
+</dialog>
+{% endfor %}
+
+<script>
+(function () {
+  document.querySelectorAll('[data-open-task]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var dialog = document.getElementById(button.dataset.openTask);
+      if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+    });
+  });
+  document.querySelectorAll('[data-close-task]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var dialog = button.closest('dialog');
+      if (dialog) dialog.close();
+    });
+  });
+  document.querySelectorAll('.agenda-dialog').forEach(function (dialog) {
+    dialog.addEventListener('click', function (event) {
+      if (event.target === dialog) dialog.close();
+    });
+  });
+  var type = document.getElementById('agenda-task-type');
+  var hint = document.getElementById('agenda-category-hint');
+  var notes = {
+    'Marketing': ['#ff7a1a', 'laranja'],
+    'Produto': ['#4b9cff', 'azul'],
+    'Pesquisa e oportunidades': ['#35bd87', 'verde'],
+    'Urgente': ['#ed6262', 'vermelho'],
+    'Organização': ['#bd82ec', 'rosa'],
+    'Outro compromisso': ['#8b98aa', 'cinza']
+  };
+  function updateCategoryHint() {
+    if (!type || !hint) return;
+    var info = notes[type.value] || notes['Outro compromisso'];
+    hint.style.setProperty('--category-preview', info[0]);
+    hint.textContent = 'Este compromisso aparecerá em ' + info[1] + ' na agenda.';
+  }
+  if (type) { type.addEventListener('change', updateCategoryHint); updateCategoryHint(); }
+})();
+</script>
 {% endblock %}
