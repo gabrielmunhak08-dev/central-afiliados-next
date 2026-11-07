@@ -985,7 +985,8 @@ def create_app(test_config=None):
             )
             opener = urllib.request.build_opener(ShopeeRedirectHandler())
             with opener.open(req, timeout=15) as response:
-                if not is_allowed_shopee_url(response.geturl()):
+                resolved_product_url = response.geturl()
+                if not is_allowed_shopee_url(resolved_product_url):
                     raise ValueError("redirect host not allowed")
                 raw_html = response.read(3_000_001)
                 if len(raw_html) > 3_000_000:
@@ -1012,9 +1013,47 @@ def create_app(test_config=None):
                         find_product_data(json.loads(script_text), structured)
                     except (ValueError, TypeError):
                         pass
+
             for key in ("name", "category", "price", "notes"):
                 if structured.get(key) and (key != "name" or looks_generic(draft["name"])):
                     draft[key] = structured[key]
+
+            # A API informa nome, preço e comissão; a descrição detalhada vem da página,
+            # pois não é um campo disponível no ProductOfferV2.
+            import re as _re
+            from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, get_product_offer_by_ids
+            ids = _re.search(r"/product/(\d+)/(\d+)", resolved_product_url)
+            if not ids:
+                ids = _re.search(r"-i\.(\d+)\.(\d+)(?:[/?#]|$)", resolved_product_url)
+            if ids:
+                shop_id, item_id = ids.group(1), ids.group(2)
+                try:
+                    offer = get_product_offer_by_ids(ShopeeAffiliateClient(), item_id, shop_id)
+                    if offer:
+                        api_name = clean_text(offer.get("productName"), 180)
+                        if api_name and not looks_generic(api_name):
+                            draft["name"] = api_name
+                        api_price = offer.get("priceMin")
+                        if api_price in (None, ""):
+                            api_price = offer.get("price")
+                        try:
+                            amount = float(str(api_price).replace(",", ".")) if api_price not in (None, "") else 0
+                            if amount > 0 and math.isfinite(amount):
+                                draft["price"] = f"{amount:.2f}".replace(".", ",")
+                        except (TypeError, ValueError):
+                            pass
+                        try:
+                            rate = float(str(offer.get("commissionRate")).replace(",", "."))
+                            if math.isfinite(rate) and rate >= 0:
+                                pct = rate * 100 if rate <= 1 else rate
+                                draft["commission"] = f"{pct:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+                        except (TypeError, ValueError):
+                            pass
+                        flash("Dados consultados na API de Afiliados Shopee. Confira os campos antes de salvar.", "success")
+                    else:
+                        flash("O produto não apareceu nas ofertas disponíveis na API. Mantive os dados encontrados na página.", "warning")
+                except ShopeeAPIError as api_exc:
+                    flash(f"Consulta à API não concluída: {api_exc} Os dados da página foram mantidos.", "warning")
 
             # Não extraímos preço ou comissão de texto genérico: uma página pode mostrar
             # ofertas relacionadas, cupons ou percentuais que não pertencem ao produto.

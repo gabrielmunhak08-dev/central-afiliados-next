@@ -196,3 +196,51 @@ def search_product_offers(client, keyword, page=1, limit=20, sort_type=5):
     if not isinstance(offers, dict):
         raise ShopeeAPIError("A resposta não contém a lista de ofertas de produtos.")
     return offers
+
+
+PRODUCT_BY_ID_QUERY = """
+query ProductOfferById($itemId: Int, $shopId: Int, $page: Int, $limit: Int) {
+  productOfferV2(itemId: $itemId, shopId: $shopId, page: $page, limit: $limit) {
+    nodes {
+      itemId
+      shopId
+      productName
+      price
+      priceMin
+      priceMax
+      commission
+      commissionRate
+      sellerCommissionRate
+      shopeeCommissionRate
+      productLink
+      offerLink
+      imageUrl
+      shopName
+    }
+    pageInfo { page limit hasNextPage }
+  }
+}
+"""
+
+
+def get_product_offer_by_ids(client, item_id, shop_id=None):
+    """Consulta uma oferta pelo ID extraído da URL, sem salvar dados."""
+    try:
+        item_id = int(item_id)
+        shop_id = int(shop_id) if shop_id is not None else None
+    except (TypeError, ValueError):
+        raise ShopeeAPIError("O link não contém um ID de produto válido.") from None
+    if item_id <= 0 or (shop_id is not None and shop_id <= 0):
+        raise ShopeeAPIError("O link não contém um ID de produto válido.")
+    variables = {"itemId": item_id, "page": 1, "limit": 10}
+    if shop_id is not None:
+        variables["shopId"] = shop_id
+    data = client.request(PRODUCT_BY_ID_QUERY, variables=variables, operation_name="ProductOfferById")
+    result = data.get("productOfferV2") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        raise ShopeeAPIError("A resposta não contém a oferta do produto.")
+    for offer in result.get("nodes") or []:
+        if str(offer.get("itemId", "")) == str(item_id):
+            if shop_id is None or str(offer.get("shopId", "")) == str(shop_id):
+                return offer
+    return None

@@ -6,7 +6,7 @@ Aplicação privada para organizar produtos de afiliado Shopee, preparar conteú
 
 - **Acesso e usuários:** configuração do primeiro administrador, login, hash de senha, proteção CSRF e administração de usuários.
 - **Catálogo:** cadastro e edição de produtos, categorias, preço, comissão informada, link de afiliado e galeria de até 10 fotos.
-- **Importação por link:** tenta ler nome, preço e descrição quando a página da Shopee disponibiliza dados estruturados. A comissão deve ser conferida na área de afiliados. Revise os campos antes de salvar.
+- **Importação por link:** ao colar um link de afiliado, a Central tenta resolver o produto, consulta nome, preço e taxa de comissão na API oficial quando identifica os IDs e as credenciais estão configuradas. A descrição é lida dos metadados/JSON-LD da página quando disponíveis, pois não faz parte dos campos de ProductOfferV2. Revise os dados antes de salvar.
 - **Busca oficial Shopee:** consulta ofertas por `productOfferV2` e mostra os resultados para avaliação. A busca não cadastra produtos automaticamente nesta versão.
 - **Marketing:** organização de conteúdo de Story e Feed, legenda, imagens e status de aprovação/publicação.
 - **Criação com IA:** usa as fotos cadastradas e as regras salvas para gerar uma arte com Gemini. A imagem entra como aguardando aprovação; não existe publicação automática no Instagram.
