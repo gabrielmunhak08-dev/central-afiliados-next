@@ -375,3 +375,91 @@ def test_shopee_offer_import_rejects_untrusted_link_and_tampered_item_id(tmp_pat
     )
     assert response.status_code == 200
     assert "não está mais nos resultados" in response.get_data(as_text=True)
+
+def test_catalog_renders_categories_even_when_there_are_no_products(tmp_path):
+    app = make_app(tmp_path)
+    client = app.test_client()
+    login_first_user(client)
+
+    response = client.get("/produtos")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Catálogos por categoria" in html
+    assert "Academia" in html
+    assert "Corrida" in html
+    assert "Cadastrar primeiro produto" in html
+
+
+def test_calendar_uses_category_colors_and_displays_full_day(tmp_path):
+    import sqlite3
+
+    app = make_app(tmp_path)
+    client = app.test_client()
+    login_first_user(client)
+    day = "2026-11-07"
+
+    categories = [
+        ("Marketing", "orange", "09:00"),
+        ("Produto", "blue", "10:00"),
+        ("Pesquisa e oportunidades", "green", "11:00"),
+        ("Urgente", "red", "12:00"),
+        ("Organização", "pink", "13:00"),
+        ("Outro compromisso", "gray", "14:00"),
+    ]
+    for category, color, time in categories:
+        token = csrf(client, "/calendario")
+        response = client.post("/calendario", data={
+            "_csrf_token": token,
+            "title": f"Tarefa {category}",
+            "task_type": category,
+            "due_at": f"{day}T{time}",
+            "description": "Detalhes do compromisso",
+        })
+        assert response.status_code == 302
+
+    response = client.get(f"/calendario?dia={day}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    for category, color, time in categories:
+        assert f"agenda-event-{color}" in html
+        assert category in html
+        assert time in html
+    assert 'id="hora-00"' in html
+    assert 'id="hora-23"' in html
+    assert "Cor do compromisso" not in html
+
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        saved = conn.execute(
+            "SELECT task_type, color FROM calendar_tasks ORDER BY id"
+        ).fetchall()
+        assert saved == [(category, color) for category, color, _ in categories]
+    finally:
+        conn.close()
+
+
+def test_calendar_rejects_invalid_category_and_uses_safe_default(tmp_path):
+    app = make_app(tmp_path)
+    client = app.test_client()
+    login_first_user(client)
+    token = csrf(client, "/calendario")
+
+    response = client.post("/calendario", data={
+        "_csrf_token": token,
+        "title": "Compromisso sem categoria válida",
+        "task_type": "cor-injetada",
+        "due_at": "2026-11-07T15:00",
+        "description": "Teste",
+    })
+    assert response.status_code == 302
+
+    import sqlite3
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        saved = conn.execute(
+            "SELECT task_type, color FROM calendar_tasks"
+        ).fetchone()
+        assert saved == ("Outro compromisso", "gray")
+    finally:
+        conn.close()
