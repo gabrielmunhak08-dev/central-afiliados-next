@@ -376,7 +376,9 @@ def test_shopee_offer_import_rejects_untrusted_link_and_tampered_item_id(tmp_pat
     assert response.status_code == 200
     assert "não está mais nos resultados" in response.get_data(as_text=True)
 
-def test_catalog_renders_categories_even_when_there_are_no_products(tmp_path):
+def test_catalog_hides_category_overview_but_keeps_categories_in_system(tmp_path):
+    import sqlite3
+
     app = make_app(tmp_path)
     client = app.test_client()
     login_first_user(client)
@@ -385,10 +387,17 @@ def test_catalog_renders_categories_even_when_there_are_no_products(tmp_path):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Catálogos por categoria" in html
-    assert "Academia" in html
-    assert "Corrida" in html
+    assert "Catálogos por categoria" not in html
+    assert "category-catalog" not in html
     assert "Cadastrar primeiro produto" in html
+
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        names = {row[0] for row in conn.execute("SELECT name FROM categories")}
+    finally:
+        conn.close()
+    assert "Academia" in names
+    assert "Corrida" in names
 
 
 def test_calendar_uses_category_colors_and_displays_full_day(tmp_path):
