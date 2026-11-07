@@ -20,10 +20,14 @@ def make_app(tmp_path):
     })
 
 
-def png_bytes():
+def image_bytes(image_format="PNG"):
     buffer = BytesIO()
-    Image.new("RGB", (3, 3), "orange").save(buffer, format="PNG")
+    Image.new("RGB", (3, 3), "orange").save(buffer, format=image_format)
     return buffer.getvalue()
+
+
+def png_bytes():
+    return image_bytes("PNG")
 
 
 def csrf(client, path):
@@ -48,8 +52,9 @@ def create_admin(client):
     assert response.status_code == 302
 
 
-def create_product(app, client, name="Produto de teste"):
+def create_product(app, client, name="Produto de teste", photo_format="PNG"):
     token = csrf(client, "/produtos/novo")
+    extension = "gif" if photo_format.upper() == "GIF" else "png"
     response = client.post("/produtos/novo", data={
         "_csrf_token": token,
         "name": name,
@@ -57,7 +62,7 @@ def create_product(app, client, name="Produto de teste"):
         "price": "119,90",
         "affiliate_link": "https://shopee.com.br/produto-teste",
         "commission": "8",
-        "photos": [(BytesIO(png_bytes()), "produto.png")],
+        "photos": [(BytesIO(image_bytes(photo_format)), f"produto.{extension}")],
     }, content_type="multipart/form-data")
     assert response.status_code == 302
     conn = sqlite3.connect(app.config["DATABASE"])
@@ -287,11 +292,12 @@ def test_uploaded_images_are_private_and_invalid_files_are_rejected(tmp_path):
     assert "/login" in protected.headers["Location"]
 
 
-def test_gemini_uses_current_image_model_and_sends_key_in_header(tmp_path, monkeypatch):
+@pytest.mark.parametrize("photo_format", ["PNG", "GIF"])
+def test_gemini_uses_current_image_model_and_sends_key_in_header(tmp_path, monkeypatch, photo_format):
     app = make_app(tmp_path)
     client = app.test_client()
     create_admin(client)
-    product_id = create_product(app, client)
+    product_id = create_product(app, client, photo_format=photo_format)
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
     generated = base64.b64encode(png_bytes()).decode("ascii")
@@ -411,3 +417,88 @@ def test_login_rejects_external_next_redirect(tmp_path):
     assert response.status_code == 302
     assert response.headers["Location"] == "/"
     assert not response.headers["Location"].startswith("//")
+
+
+def test_calendar_status_returns_404_for_missing_task(tmp_path):
+    app = make_app(tmp_path)
+    client = app.test_client()
+    create_admin(client)
+
+    token = csrf(client, "/calendario")
+    response = client.post("/calendario/99999/status", data={
+        "_csrf_token": token,
+        "status": "Concluída",
+        "dia": "2026-11-07",
+    })
+    assert response.status_code == 404
+
+
+def test_calendar_counts_tasks_that_expired_earlier_today(tmp_path):
+    import datetime
+
+    app = make_app(tmp_path)
+    client = app.test_client()
+    create_admin(client)
+
+    expired_at = (datetime.datetime.now() - datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M")
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        conn.execute(
+            "INSERT INTO calendar_tasks (title, task_type, due_at, status) VALUES (?, ?, ?, ?)",
+            ("Compromisso vencido hoje", "Tarefa", expired_at, "Pendente"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = client.get("/calendario")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Atrasadas</span><strong>1</strong>" in html
+
+
+def test_calendar_task_status_can_be_changed(tmp_path):
+    import datetime
+
+    app = make_app(tmp_path)
+    client = app.test_client()
+    create_admin(client)
+
+    due_at = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
+    token = csrf(client, "/calendario")
+    response = client.post("/calendario", data={
+        "_csrf_token": token,
+        "title": "Revisar publicação",
+        "description": "Conferir legenda e imagem",
+        "task_type": "Marketing",
+        "due_at": due_at,
+        "color": "green",
+    })
+    assert response.status_code == 302
+
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        task_id = conn.execute(
+            "SELECT id FROM calendar_tasks WHERE title=?",
+            ("Revisar publicação",),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    token = csrf(client, "/calendario")
+    response = client.post(f"/calendario/{task_id}/status", data={
+        "_csrf_token": token,
+        "status": "Concluída",
+        "dia": due_at[:10],
+    })
+    assert response.status_code == 302
+
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        status = conn.execute(
+            "SELECT status FROM calendar_tasks WHERE id=?",
+            (task_id,),
+        ).fetchone()[0]
+        assert status == "Concluída"
+    finally:
+        conn.close()
