@@ -508,7 +508,10 @@ def create_app(test_config=None):
     from PIL import Image, UnidentifiedImageError
 
     legacy_upload_dir = (Path(app.static_folder) / "uploads").resolve()
-    configured_upload_dir = os.environ.get("CENTRAL_UPLOAD_FOLDER", "").strip()
+    configured_upload_dir = (
+        app.config.get("UPLOAD_FOLDER")
+        or os.environ.get("CENTRAL_UPLOAD_FOLDER", "").strip()
+    )
     upload_dir = (
         Path(configured_upload_dir).expanduser().resolve()
         if configured_upload_dir
