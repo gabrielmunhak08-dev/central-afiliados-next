@@ -361,3 +361,53 @@ def test_security_headers_are_present_on_public_health_endpoint(tmp_path):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+
+def test_legacy_static_uploads_are_migrated_to_private_folder(tmp_path, monkeypatch):
+    static_root = tmp_path / "static"
+    legacy_folder = static_root / "uploads"
+    legacy_folder.mkdir(parents=True)
+    original_bytes = png_bytes()
+    (legacy_folder / "legacy-photo.png").write_bytes(original_bytes)
+
+    real_flask = app_module.Flask
+
+    def flask_with_temp_static(*args, **kwargs):
+        flask_app = real_flask(*args, **kwargs)
+        flask_app.static_folder = str(static_root)
+        return flask_app
+
+    monkeypatch.setattr(app_module, "Flask", flask_with_temp_static)
+    private_folder = tmp_path / "private-uploads"
+    app = create_app({
+        "TESTING": True,
+        "SECRET_KEY": "test-only-secret",
+        "DATABASE": str(tmp_path / "migration.sqlite3"),
+        "UPLOAD_FOLDER": str(private_folder),
+    })
+
+    migrated = private_folder / "legacy-photo.png"
+    assert migrated.read_bytes() == original_bytes
+    assert not (legacy_folder / "legacy-photo.png").exists()
+    assert not legacy_folder.exists()
+    assert app.test_client().get("/static/uploads/legacy-photo.png").status_code == 404
+
+
+def test_login_rejects_external_next_redirect(tmp_path):
+    app = make_app(tmp_path)
+    client = app.test_client()
+    create_admin(client)
+
+    logout_token = csrf(client, "/")
+    client.post("/logout", data={"_csrf_token": logout_token})
+
+    token = csrf(client, "/login?next=//evil.example")
+    response = client.post("/login?next=//evil.example", data={
+        "_csrf_token": token,
+        "username": "admincentral",
+        "password": "senha-forte-de-teste-123",
+    })
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
+    assert not response.headers["Location"].startswith("//")
