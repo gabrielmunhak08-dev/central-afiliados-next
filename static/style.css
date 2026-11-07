@@ -1012,3 +1012,7 @@ body.sidebar-collapsed .sidebar-collapse-button svg{transform:rotate(180deg)}
 
 /* Mantém o texto opcional na mesma linha do rótulo do produto relacionado. */
 .agenda-field-label{display:block;line-height:1.2;white-space:nowrap}
+
+/* Garante contraste do CTA dentro do estado vazio do catálogo. */
+.product-empty-state a.product-empty-cta{color:#17100a!important;text-decoration:none}
+.product-empty-state a.product-empty-cta:hover{color:#17100a!important;filter:brightness(1.06)}
