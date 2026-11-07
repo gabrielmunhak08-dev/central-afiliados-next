@@ -273,3 +273,105 @@ def test_shopee_search_page_renders_mocked_offers_without_saving(tmp_path, monke
         assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
     finally:
         conn.close()
+
+
+
+def test_shopee_offer_import_saves_verified_affiliate_link_and_product(tmp_path, monkeypatch):
+    import sqlite3
+    from shopee_affiliate import ShopeeAffiliateClient
+
+    app = make_app(tmp_path)
+    client = app.test_client()
+    login_first_user(client)
+    offer = {
+        "itemId": "98765",
+        "productName": "Garrafa térmica de teste",
+        "shopName": "Loja oficial",
+        "price": 59.9,
+        "commission": 4.25,
+        "commissionRate": "8%",
+        "offerLink": "https://s.shopee.com.br/link-afiliado-teste",
+    }
+    monkeypatch.setattr(
+        ShopeeAffiliateClient,
+        "request",
+        lambda *args, **kwargs: {"productOfferV2": {"nodes": [offer], "pageInfo": {}}},
+    )
+    token = csrf(client, "/produtos/buscar-shopee")
+    response = client.post(
+        "/produtos/importar-oferta-shopee",
+        data={
+            "_csrf_token": token,
+            "keyword": "garrafa térmica",
+            "page": "1",
+            "item_id": "98765",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Produto importado com o link de afiliado" in response.get_data(as_text=True)
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        saved = conn.execute(
+            "SELECT name, price, affiliate_link, commission FROM products"
+        ).fetchone()
+        assert saved == (
+            "Garrafa térmica de teste",
+            59.9,
+            "https://s.shopee.com.br/link-afiliado-teste",
+            4.25,
+        )
+    finally:
+        conn.close()
+
+
+def test_shopee_offer_import_rejects_untrusted_link_and_tampered_item_id(tmp_path, monkeypatch):
+    import sqlite3
+    from shopee_affiliate import ShopeeAffiliateClient
+
+    app = make_app(tmp_path)
+    client = app.test_client()
+    login_first_user(client)
+    offer = {
+        "itemId": "98765",
+        "productName": "Produto com link externo",
+        "price": 20,
+        "offerLink": "https://example.com/not-an-affiliate-link",
+    }
+    monkeypatch.setattr(
+        ShopeeAffiliateClient,
+        "request",
+        lambda *args, **kwargs: {"productOfferV2": {"nodes": [offer], "pageInfo": {}}},
+    )
+    token = csrf(client, "/produtos/buscar-shopee")
+    response = client.post(
+        "/produtos/importar-oferta-shopee",
+        data={
+            "_csrf_token": token,
+            "keyword": "produto",
+            "page": "1",
+            "item_id": "98765",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "link de afiliado válido" in response.get_data(as_text=True)
+    conn = sqlite3.connect(app.config["DATABASE"])
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+    token = csrf(client, "/produtos/buscar-shopee")
+    response = client.post(
+        "/produtos/importar-oferta-shopee",
+        data={
+            "_csrf_token": token,
+            "keyword": "produto",
+            "page": "1",
+            "item_id": "ID-QUE-NAO-VEIO-DA-BUSCA",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "não está mais nos resultados" in response.get_data(as_text=True)
