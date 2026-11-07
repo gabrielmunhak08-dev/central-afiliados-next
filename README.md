@@ -1,45 +1,78 @@
-# Central de Afiliados — Next
+# Central de Afiliados
 
-Nova aplicação independente para organizar produtos afiliados, preparar conteúdo para Instagram e acompanhar resultados. Projeto mobile-first, pensado primeiro para execução local no Android/Termux.
+Aplicação privada para organizar produtos de afiliado Shopee, preparar conteúdo para Instagram e planejar a rotina de publicações. A interface é responsiva e prioriza o uso pelo celular; o notebook Windows atua somente como servidor.
 
-## Estado atual
+## Funcionalidades presentes
 
-A base inicial inclui configuração do primeiro usuário, login, proteção CSRF, esquema SQLite e painel privado. Ainda não está pronta para uso público e não foi validada no aparelho Android. Os módulos de catálogo, imagens, calendário, conteúdo e resultados ainda precisam ser implementados.
+- **Acesso e usuários:** configuração do primeiro administrador, login, hash de senha, proteção CSRF e administração de usuários.
+- **Catálogo:** cadastro e edição de produtos, categorias, preço, comissão informada, link de afiliado e galeria de até 10 fotos.
+- **Importação por link:** tenta ler nome, preço e descrição quando a página da Shopee disponibiliza dados estruturados. A comissão deve ser conferida na área de afiliados. Revise os campos antes de salvar.
+- **Busca oficial Shopee:** consulta ofertas por `productOfferV2` e mostra os resultados para avaliação. A busca não cadastra produtos automaticamente nesta versão.
+- **Marketing:** organização de conteúdo de Story e Feed, legenda, imagens e status de aprovação/publicação.
+- **Criação com IA:** usa as fotos cadastradas e as regras salvas para gerar uma arte com Gemini. A imagem entra como aguardando aprovação; não existe publicação automática no Instagram.
+- **Calendário:** agenda semanal básica para compromissos e tarefas. A experiência visual e a gestão editorial ainda podem evoluir.
 
-## Arquivos principais
+## O que ainda não está concluído
 
-- `docs/PLANO.md`: escopo, regras, arquitetura e etapas do projeto.
-- `app.py`: aplicação Flask, configuração inicial, login, proteção de formulários e criação do banco local.
-- `templates/` e `static/`: telas responsivas com tema escuro e detalhes em laranja.
-- `tests/test_app.py`: testes da configuração inicial, autenticação e proteção CSRF.
-- `.github/workflows/tests.yml`: execução automatizada dos testes no GitHub Actions.
-- `.gitignore`: exclui ambientes, bancos locais, uploads e segredos.
+- Importar diretamente um resultado da pesquisa Shopee para o catálogo com confirmação do usuário.
+- Paginação completa da pesquisa Shopee e validação ao vivo com as credenciais reais da conta.
+- Painel de métricas de cliques, pedidos, vendas e comissão conectado a dados reais.
+- Revisão e evolução do calendário editorial.
+- Publicação automática no Instagram. O compartilhamento e a publicação continuam sob controle do usuário.
 
-## Requisitos e execução local
+Não considere uma integração validada até que o teste seja feito com uma conta e credenciais autorizadas. Os testes automatizados simulam a resposta dos serviços externos e não confirmam acesso real.
 
-Python 3.11+ recomendado. Instale as dependências com:
+## Requisitos
 
-```bash
+- Python 3.12 recomendado.
+- Windows 10/11 ou Linux.
+- `CENTRAL_SECRET_KEY` forte e exclusiva da instalação.
+- Credenciais Shopee e chave Gemini somente quando os respectivos recursos forem usados.
+
+## Instalação no notebook servidor
+
+1. Instale as dependências de execução:
+
+```powershell
 python -m pip install -r requirements.txt
 ```
 
-Defina uma chave secreta forte na variável de ambiente `CENTRAL_SECRET_KEY` antes de executar `python app.py`. Não use uma chave de exemplo em uma instalação real. O servidor de desenvolvimento fica limitado a `127.0.0.1`; não o exponha diretamente à internet.
+2. Copie `.env.example` para `.env` na pasta do projeto e preencha os valores localmente. O arquivo `.env` é ignorado pelo Git e nunca deve ser enviado ao repositório.
 
-Na primeira abertura, acesse `/configurar` e crie um nome de usuário e uma senha com pelo menos 12 caracteres. A configuração inicial fica bloqueada depois que o primeiro usuário é criado. Não existe senha padrão. Guarde suas credenciais: não há recuperação de senha implementada nesta fase.
+3. Para acesso pela internet através de um túnel HTTPS, mantenha `CENTRAL_COOKIE_SECURE=1`. Para teste exclusivamente local via `http://127.0.0.1`, use `CENTRAL_COOKIE_SECURE=0`.
 
-## Segurança e limitações atuais
+4. Inicie o servidor:
 
-- Senhas são armazenadas como hash; formulários POST exigem token CSRF.
-- O banco SQLite é criado no diretório local `instance` por padrão.
-- Esta versão não tem catálogo funcional nem upload de fotos ainda.
-- A configuração do cookie seguro deve ser revisada para uma implantação HTTPS.
-- Testes foram escritos, mas só devem ser considerados aprovados depois de uma execução confirmada no CI e/ou no ambiente local.
-- Não há integração validada com API da Shopee nem publicação automática no Instagram.
+```powershell
+python app.py
+```
 
-## Princípios
+O Waitress atende somente em `127.0.0.1:5000` por padrão. O acesso externo deve passar por um túnel HTTPS confiável apontando para `http://127.0.0.1:5000`; não exponha a porta do Waitress diretamente à internet nem use o servidor de desenvolvimento do Flask.
 
-- Não importar dados da versão antiga.
-- Não inventar preços, descontos, tendências ou métricas.
-- Não versionar segredos ou chaves de API.
-- Testar e fazer backup antes de atualizações relevantes.
-- Não ativar publicação automática no Instagram sem integração oficial verificada.
+Na primeira abertura, acesse `/configurar` e crie a conta inicial. Essa primeira conta recebe o perfil de administrador. Use uma senha forte com pelo menos 12 caracteres.
+
+## Dados e privacidade
+
+- Banco padrão: `instance/central.sqlite3`.
+- Fotos e artes privadas: `instance/uploads/`.
+- Os arquivos enviados são verificados como imagens reais, com limites de tamanho e dimensão.
+- A rota `/uploads/...` exige login. A rota pública `/static/uploads/...` é bloqueada.
+- O aplicativo pode migrar fotos antigas de `static/uploads/` para a pasta privada na inicialização. A cópia é conferida antes de remover o arquivo antigo; em caso de conflito, a inicialização para sem apagar o original.
+- Faça backup da pasta `instance/` e do `.env` antes de atualizar o servidor. Não inclua o `.env` em backups compartilhados.
+
+## Testes
+
+Instale as dependências de desenvolvimento e execute:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+O GitHub Actions executa a mesma suíte em push para `main` e em pull requests direcionados à `main`.
+
+## Fluxo de atualização do projeto
+
+O código é atualizado no GitHub e revisado com testes antes da publicação. O notebook não é usado para desenvolver ou editar arquivos: ele somente executa o servidor e recebe a versão aprovada.
+
+Não versionar segredos, bancos de dados, fotos, uploads nem arquivos locais de ambiente.
