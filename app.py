@@ -249,47 +249,100 @@ def create_app(test_config=None):
     @login_required
     def calendar():
         import datetime
+
+        category_colors = {
+            "Marketing": "orange",
+            "Produto": "blue",
+            "Pesquisa": "green",
+            "Pesquisa e oportunidades": "green",
+            "Urgente": "red",
+            "Organização": "pink",
+            "Tarefa": "gray",
+            "Outro compromisso": "gray",
+        }
+        allowed_categories = (
+            "Marketing", "Produto", "Pesquisa e oportunidades",
+            "Urgente", "Organização", "Outro compromisso",
+        )
         db = connect_db()
         try:
             if request.method == "POST":
                 title = request.form.get("title", "").strip()
                 description = request.form.get("description", "").strip()
-                task_type = request.form.get("task_type", "Tarefa").strip()
+                task_type = request.form.get("task_type", "Outro compromisso").strip()
                 due_at = request.form.get("due_at", "").strip()
                 product_id = request.form.get("product_id", "").strip()
-                color = request.form.get("color", "blue").strip()
-                if color not in {"yellow", "blue", "green", "red", "pink"}:
-                    color = "blue"
+                # A cor agora é definida pela categoria; o campo legado continua
+                # preenchido para manter compatibilidade com bancos já existentes.
+                if task_type not in allowed_categories:
+                    task_type = "Outro compromisso"
+                color = category_colors[task_type]
                 try:
                     datetime.datetime.strptime(due_at, "%Y-%m-%dT%H:%M")
                     linked_product = int(product_id) if product_id else None
-                    if linked_product is not None and not db.execute("SELECT id FROM products WHERE id = ?", (linked_product,)).fetchone():
+                    if linked_product is not None and not db.execute(
+                        "SELECT id FROM products WHERE id = ?", (linked_product,)
+                    ).fetchone():
                         linked_product = None
-                    if not title:
-                        raise ValueError("title")
-                    db.execute("INSERT INTO calendar_tasks (title, description, task_type, due_at, product_id, color) VALUES (?, ?, ?, ?, ?, ?)", (title, description, task_type, due_at, linked_product, color))
+                    if not title or len(title) > 160 or len(description) > 1000:
+                        raise ValueError("invalid task")
+                    db.execute(
+                        """INSERT INTO calendar_tasks
+                           (title, description, task_type, due_at, product_id, color)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (title, description, task_type, due_at, linked_product, color),
+                    )
                     db.commit()
                     flash("Compromisso adicionado à agenda.", "success")
                     return redirect(url_for("calendar", dia=due_at[:10]))
                 except (ValueError, sqlite3.Error):
                     db.rollback()
                     flash("Não foi possível salvar. Confira o título, a data e o horário.", "error")
+
             today = datetime.date.today()
             try:
-                selected_day = datetime.datetime.strptime(request.args.get("dia", ""), "%Y-%m-%d").date()
+                selected_day = datetime.datetime.strptime(
+                    request.args.get("dia", ""), "%Y-%m-%d"
+                ).date()
             except ValueError:
                 selected_day = today
-            week_start = selected_day - datetime.timedelta(days=selected_day.weekday())
-            week_days = [week_start + datetime.timedelta(days=i) for i in range(7)]
-            week_end = week_start + datetime.timedelta(days=7)
-            tasks = db.execute("SELECT t.*, p.name AS product_name FROM calendar_tasks t LEFT JOIN products p ON p.id=t.product_id WHERE t.due_at >= ? AND t.due_at < ? ORDER BY t.due_at", (week_start.isoformat() + "T00:00", week_end.isoformat() + "T00:00")).fetchall()
-            day_tasks = [task for task in tasks if task["due_at"][:10] == selected_day.isoformat()]
-            day_counts = {day.isoformat(): sum(1 for task in tasks if task["due_at"][:10] == day.isoformat()) for day in week_days}
-            products = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+
+            day_start = selected_day.isoformat() + "T00:00"
+            next_day = (selected_day + datetime.timedelta(days=1)).isoformat() + "T00:00"
+            rows = db.execute(
+                """SELECT t.*, p.name AS product_name
+                   FROM calendar_tasks t
+                   LEFT JOIN products p ON p.id=t.product_id
+                   WHERE t.due_at >= ? AND t.due_at < ?
+                   ORDER BY t.due_at, t.id""",
+                (day_start, next_day),
+            ).fetchall()
+
+            day_tasks = []
+            for row in rows:
+                task = dict(row)
+                try:
+                    task["hour"] = int(task["due_at"][11:13])
+                    task["time_label"] = task["due_at"][11:16]
+                except (TypeError, ValueError, IndexError):
+                    task["hour"] = 0
+                    task["time_label"] = "00:00"
+                task["color_class"] = category_colors.get(
+                    task.get("task_type", ""), "gray"
+                )
+                day_tasks.append(task)
+
+            products = db.execute(
+                "SELECT id, name FROM products ORDER BY name COLLATE NOCASE"
+            ).fetchall()
             now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M")
             task_stats = {
-                "pending": db.execute("SELECT COUNT(*) FROM calendar_tasks WHERE status='Pendente'").fetchone()[0],
-                "done": db.execute("SELECT COUNT(*) FROM calendar_tasks WHERE status='Concluída'").fetchone()[0],
+                "pending": db.execute(
+                    "SELECT COUNT(*) FROM calendar_tasks WHERE status='Pendente'"
+                ).fetchone()[0],
+                "done": db.execute(
+                    "SELECT COUNT(*) FROM calendar_tasks WHERE status='Concluída'"
+                ).fetchone()[0],
                 "overdue": db.execute(
                     "SELECT COUNT(*) FROM calendar_tasks WHERE status!='Concluída' AND due_at < ?",
                     (now,),
@@ -297,8 +350,17 @@ def create_app(test_config=None):
             }
         finally:
             db.close()
-        return render_template("calendar.html", tasks=tasks, day_tasks=day_tasks, products=products, selected_day=selected_day, week_days=week_days, day_counts=day_counts, prev_day=selected_day - datetime.timedelta(days=1), next_day=selected_day + datetime.timedelta(days=1), task_stats=task_stats)
 
+        return render_template(
+            "calendar.html",
+            day_tasks=day_tasks,
+            products=products,
+            selected_day=selected_day,
+            prev_day=selected_day - datetime.timedelta(days=1),
+            next_day=selected_day + datetime.timedelta(days=1),
+            task_stats=task_stats,
+            hours=range(24),
+        )
     @app.post("/calendario/<int:task_id>/status")
     @login_required
     def calendar_task_status(task_id):
@@ -740,24 +802,54 @@ def create_app(test_config=None):
     @login_required
     def products():
         q = request.args.get("q", "").strip()
+        category = request.args.get("categoria", "").strip()
         db = connect_db()
         try:
-            sql = """SELECT p.*, (SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) AS extra_images, EXISTS(SELECT 1 FROM posts po WHERE po.product_id=p.id AND po.status='Publicado') AS has_published FROM products p"""
+            sql = """SELECT p.*,
+                        (SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) AS extra_images,
+                        EXISTS(SELECT 1 FROM posts po WHERE po.product_id=p.id AND po.status='Publicado') AS has_published
+                     FROM products p"""
+            conditions = []
+            params = []
             if q:
-                rows = db.execute(sql + " WHERE p.name LIKE ? OR p.category LIKE ? ORDER BY p.id DESC", (f"%{q}%", f"%{q}%")).fetchall()
-            else:
-                rows = db.execute(sql + " ORDER BY p.id DESC").fetchall()
+                conditions.append("(p.name LIKE ? OR p.category LIKE ?)")
+                params.extend([f"%{q}%", f"%{q}%"])
+            if category:
+                conditions.append("LOWER(TRIM(p.category)) = LOWER(TRIM(?))")
+                params.append(category)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+            sql += " ORDER BY p.id DESC"
+            rows = db.execute(sql, params).fetchall()
             products_data = [dict(row) for row in rows]
             for product in products_data:
                 photo_rows = db.execute(
                     "SELECT filename FROM product_images WHERE product_id=? ORDER BY id",
-                    (product["id"],)
+                    (product["id"],),
                 ).fetchall()
-                product["gallery_filenames"] = ([product["image_filename"]] if product["image_filename"] else []) + [photo["filename"] for photo in photo_rows]
+                product["gallery_filenames"] = (
+                    [product["image_filename"]] if product["image_filename"] else []
+                ) + [photo["filename"] for photo in photo_rows]
+
+            categories = db.execute(
+                """SELECT c.name, COUNT(p.id) AS product_count
+                   FROM categories c
+                   LEFT JOIN products p
+                     ON LOWER(TRIM(p.category)) = LOWER(TRIM(c.name))
+                   GROUP BY c.id, c.name
+                   ORDER BY c.name COLLATE NOCASE"""
+            ).fetchall()
+            product_total = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
         finally:
             db.close()
-        return render_template("products.html", products=products_data, q=q)
-
+        return render_template(
+            "products.html",
+            products=products_data,
+            q=q,
+            category=category,
+            categories=categories,
+            product_total=product_total,
+        )
 
     @app.route("/produtos/importar-link", methods=["POST"])
     @login_required
