@@ -3,7 +3,6 @@ import hmac
 import base64
 import json
 import math
-import mimetypes
 import os
 import secrets
 import shutil
@@ -287,10 +286,14 @@ def create_app(test_config=None):
             day_tasks = [task for task in tasks if task["due_at"][:10] == selected_day.isoformat()]
             day_counts = {day.isoformat(): sum(1 for task in tasks if task["due_at"][:10] == day.isoformat()) for day in week_days}
             products = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+            now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M")
             task_stats = {
                 "pending": db.execute("SELECT COUNT(*) FROM calendar_tasks WHERE status='Pendente'").fetchone()[0],
                 "done": db.execute("SELECT COUNT(*) FROM calendar_tasks WHERE status='Concluída'").fetchone()[0],
-                "overdue": db.execute("SELECT COUNT(*) FROM calendar_tasks WHERE status!='Concluída' AND due_at < ?", (today.isoformat() + "T00:00",)).fetchone()[0],
+                "overdue": db.execute(
+                    "SELECT COUNT(*) FROM calendar_tasks WHERE status!='Concluída' AND due_at < ?",
+                    (now,),
+                ).fetchone()[0],
             }
         finally:
             db.close()
@@ -304,7 +307,9 @@ def create_app(test_config=None):
             abort(400)
         db = connect_db()
         try:
-            db.execute("UPDATE calendar_tasks SET status=? WHERE id=?", (status, task_id))
+            cursor = db.execute("UPDATE calendar_tasks SET status=? WHERE id=?", (status, task_id))
+            if cursor.rowcount == 0:
+                abort(404)
             db.commit()
         finally:
             db.close()
@@ -1095,13 +1100,37 @@ def create_app(test_config=None):
                 path = upload_dir / filename
                 if not path.is_file():
                     continue
-                mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
-                if mime not in {"image/jpeg", "image/png", "image/webp"}:
+                try:
+                    # Normaliza JPEG, PNG, WEBP e GIF (primeiro quadro) para formatos
+                    # aceitos pelo Gemini, preservando transparência quando existir.
+                    with Image.open(path) as source_image:
+                        source_image.seek(0)
+                        has_alpha = (
+                            source_image.mode in {"RGBA", "LA"}
+                            or "transparency" in source_image.info
+                        )
+                        buffer = BytesIO()
+                        if has_alpha:
+                            source_image.convert("RGBA").save(
+                                buffer, format="PNG", optimize=True
+                            )
+                            mime = "image/png"
+                        else:
+                            source_image.convert("RGB").save(
+                                buffer, format="JPEG", quality=90, optimize=True
+                            )
+                            mime = "image/jpeg"
+                        raw = buffer.getvalue()
+                except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
                     continue
-                raw = path.read_bytes()
-                if len(raw) > 7 * 1024 * 1024:
+                if not raw or len(raw) > 7 * 1024 * 1024:
                     continue
-                parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(raw).decode("ascii")}})
+                parts.append({
+                    "inline_data": {
+                        "mime_type": mime,
+                        "data": base64.b64encode(raw).decode("ascii"),
+                    }
+                })
             if len(parts) == 1:
                 flash("Não encontrei fotos de referência válidas para este produto.", "error")
                 return redirect(url_for("create_content_ai", tipo=content_type))
