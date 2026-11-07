@@ -1,85 +1,155 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Editar produto' if product else 'Novo produto' }} · Central{% endblock %}
 {% block content %}
+{% set saved_photo_count = (1 if product and product.image_filename else 0) + (product_photos|length) %}
+<section class="section-heading product-form-heading">
+  <div><p class="eyebrow">CATÁLOGO</p><h1>{{ 'Editar' if product else 'Cadastrar' }} <span class="accent">produto.</span></h1><p class="muted">Mantenha os dados, o link de afiliado e as fotos organizados.</p></div>
+  <a class="button button-quiet" href="{{ url_for('products') }}">← Voltar ao catálogo</a>
+</section>
+
+{% if not product %}
+<form class="form-card product-import-card" method="post" action="{{ url_for('import_product_link') }}">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <label>Importar produto pelo link de afiliado
+    <div class="form-row"><input type="url" name="affiliate_link" required placeholder="Cole seu link de afiliado da Shopee" value="{{ draft.affiliate_link if draft is defined else '' }}"><button class="button button-quiet" type="submit">Buscar dados</button></div>
+    <small>A Central tentará ler nome, preço e descrição quando esses dados estiverem disponíveis. Confira as informações antes de salvar.</small>
+  </label>
+</form>
+{% endif %}
+
+{% if product %}
+  {% for photo in product_photos %}
+  <form id="set-main-photo-{{ photo.id }}" method="post" action="{{ url_for('set_main_product_photo', product_id=product.id, photo_id=photo.id) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"></form>
+  {% endfor %}
+{% endif %}
+
+<form class="form-card product-editor-form" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <label>Nome do produto
+    <input name="name" required maxlength="180" value="{{ product.name if product else (draft.name if draft is defined else '') }}" placeholder="Ex.: Tênis de corrida">
+  </label>
+
+  <div class="form-row product-data-row">
+    <div class="category-field">
+      <label for="category-input">Categoria</label>
+      <input name="category" id="category-input" maxlength="80" autocomplete="off" value="{{ product.category if product else (draft.category if draft is defined else '') }}" placeholder="Comece a digitar: academia, pesca...">
+      <div id="category-count-list" class="category-suggestions" hidden>
+        {% for cat in categories|default([]) %}
+        <button type="button" class="category-choice" data-category="{{ cat.name }}" data-count="{{ cat.product_count }}" hidden>{{ cat.name }} <span>· {{ cat.product_count }} produto(s)</span></button>
+        {% endfor %}
+      </div>
+      <small>Digite para localizar uma categoria existente ou informe uma nova.</small>
+    </div>
+    <label>Preço do produto
+      <span class="currency-input"><span aria-hidden="true">R$</span><input name="price" inputmode="decimal" value="{{ product.price if product and product.price is not none else (draft.price if draft is defined else '') }}" placeholder="23,50" required></span>
+    </label>
+  </div>
+
+  <label>Comissão
+    <span class="currency-input percent-input"><span aria-hidden="true">%</span><input name="commission" inputmode="decimal" value="{{ product.commission if product and product.commission is not none else (draft.commission if draft is defined else '') }}" placeholder="20"></span>
+    <small>Informe a porcentagem indicada na área de afiliados da Shopee, de 0 a 100%.</small>
+  </label>
+
+  <label>Link de afiliado Shopee
+    <span class="form-row product-link-row"><input type="url" name="affiliate_link" id="affiliate-link" value="{{ product.affiliate_link if product else (draft.affiliate_link if draft is defined else '') }}" placeholder="https://..."><button class="button button-quiet" type="button" onclick="testAffiliateLink()">Testar link</button></span>
+    <small>O teste abre o link em outra aba, sem alterar o endereço salvo.</small>
+  </label>
+
+  <label>Observações / descrição
+    <textarea name="notes" rows="4" maxlength="3000" placeholder="Detalhes confirmados do produto">{{ product.notes if product else (draft.notes if draft is defined else '') }}</textarea>
+  </label>
+
+  <div class="product-photo-section">
+    <div class="product-photo-heading"><div><strong>Fotos do produto</strong><small>Até 10 imagens no total por produto.</small></div><span class="photo-total-count" id="photo-total-count">{{ saved_photo_count }} / 10</span></div>
+    <label class="file-upload-control" for="product-photos">
+      <span class="file-upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="file-upload-copy"><strong>Escolher arquivos</strong><small id="photo-file-names">Clique para selecionar fotos PNG, JPG, WEBP ou GIF.</small></span>
+      <span class="file-upload-count">Selecionar fotos</span>
+      <input type="file" id="product-photos" name="photos" accept=".png,.jpg,.jpeg,.webp,.gif" multiple>
+    </label>
+    <p class="photo-limit-note">Já salvas: {{ saved_photo_count }} · Disponíveis: {{ 10 - saved_photo_count }} foto(s)</p>
+  </div>
+
+  {% if product and product.image_filename %}
+  <div class="product-saved-photos">
+    <p class="muted">Foto principal atual</p>
+    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=product.image_filename) }}" alt="Foto principal"><strong>Foto principal</strong></div>
+  </div>
+  {% endif %}
+  {% if product %}
+  <div class="product-saved-photos">
+    <h2>Fotos adicionais</h2><p class="muted">Você pode definir uma foto adicional como principal. A foto anterior continua na galeria.</p>
+    {% for photo in product_photos %}
+    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=photo.filename) }}" alt="Foto adicional"><span>Foto adicional {{ loop.index }}</span><button class="button button-quiet button-small" type="submit" form="set-main-photo-{{ photo.id }}">Usar como principal</button></div>
+    {% else %}<p class="muted">Nenhuma foto adicional.</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="form-row form-actions product-form-actions">
+    <button class="button" type="submit">Salvar produto</button>
+    {% if product %}<button class="button button-danger" type="submit" form="delete-product-form" onclick="return confirm('Excluir este produto e todas as fotos dele?');">Excluir produto</button>{% endif %}
+  </div>
+</form>
+{% if product %}<form id="delete-product-form" method="post" action="{{ url_for('product_delete', product_id=product.id) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"></form>{% endif %}
+
 <script>
 function testAffiliateLink() {
   const field = document.getElementById("affiliate-link");
   const value = (field.value || "").trim();
-  if (!value) {
-    alert("Cole seu link de afiliado primeiro.");
-    return;
-  }
+  if (!value) { alert("Cole seu link de afiliado primeiro."); return; }
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "https:" || !parsed.hostname) {
-      alert("Cole um link HTTPS válido antes de testar.");
-      return;
-    }
-    const opened = window.open(parsed.href, "_blank");
-    if (!opened) {
-      window.location.href = parsed.href;
-    }
-  } catch (_) {
-    alert("Cole um link válido antes de testar.");
-  }
+    if (parsed.protocol !== "https:" || !parsed.hostname) { alert("Cole um link HTTPS válido antes de testar."); return; }
+    const opened = window.open(parsed.href, "_blank", "noopener,noreferrer");
+    if (!opened) window.location.href = parsed.href;
+  } catch (_) { alert("Cole um link válido antes de testar."); }
 }
-</script>
-<section class="section-heading"><p class="eyebrow">CATÁLOGO</p><h1>{{ 'Editar' if product else 'Cadastrar' }} <span class="accent">produto.</span></h1><p class="muted">Mantenha o link de afiliado separado do nome.</p><a class="button button-quiet" href="{{ url_for('products') }}">← Voltar ao catálogo</a></section>
-{% if not product %}
-<form class="form-card" method="post" action="{{ url_for('import_product_link') }}">
-<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-<label>Importar produto pelo seu link de afiliado
-<div class="form-row"><input type="url" name="affiliate_link" required placeholder="Cole seu link de afiliado da Shopee" value="{{ draft.affiliate_link if draft is defined else '' }}"><button class="button button-quiet" type="submit">Buscar dados</button></div>
-<small>A Central tentará importar nome, preço e descrição quando estiverem nos dados estruturados da página. A comissão deve ser confirmada na área de afiliados da Shopee. Confira tudo antes de salvar.</small></label>
-</form>
-{% endif %}
-{% if product %}{% for photo in product_photos %}<form id="set-main-photo-{{ photo.id }}" method="post" action="{{ url_for('set_main_product_photo', product_id=product.id, photo_id=photo.id) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"></form>{% endfor %}{% endif %}
-<form class="form-card" method="post" enctype="multipart/form-data">
-<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-<label>Nome do produto<input name="name" required maxlength="180" value="{{ product.name if product else (draft.name if draft is defined else '') }}" placeholder="Ex.: Tênis de corrida"></label>
-<div class="form-row category-field"><label>Categoria<input name="category" id="category-input" maxlength="80" autocomplete="off" value="{{ product.category if product else (draft.category if draft is defined else '') }}" placeholder="Comece a digitar: academia, pesca..."></label><div id="category-count-list" hidden style="flex-direction:column;gap:4px;margin-top:4px">{% for cat in categories|default([]) %}<button type="button" class="category-choice" data-category="{{ cat.name }}" data-count="{{ cat.product_count }}" hidden style="text-align:left;width:100%;padding:9px 12px;border:1px solid var(--border-color, #333);border-radius:8px;background:var(--card, #17191d);color:inherit">{{ cat.name }} <span style="opacity:.75">· {{ cat.product_count }} produto(s)</span></button>{% endfor %}</div><small>Digite para ver as categorias correspondentes e quantos produtos há em cada uma. Se não existir, você pode cadastrar uma nova.</small></div><label>Preço do produto<div class="currency-input"><span aria-hidden="true">R$</span><input name="price" inputmode="decimal" value="{{ product.price if product and product.price is not none else (draft.price if draft is defined else '') }}" placeholder="23,50" required></div></label></div>
-<label>Comissão<div class="currency-input percent-input"><input name="commission" inputmode="decimal" value="{{ product.commission if product and product.commission is not none else (draft.commission if draft is defined else '') }}" placeholder="20"><span aria-hidden="true">%</span></div><small>Informe a porcentagem de comissão indicada pela Shopee, de 0 a 100%.</small></label>
-<label>Link de afiliado Shopee<div class="form-row"><input type="url" name="affiliate_link" id="affiliate-link" value="{{ product.affiliate_link if product else (draft.affiliate_link if draft is defined else '') }}" placeholder="https://..."><button class="button button-quiet" type="button" onclick="testAffiliateLink()">Testar link</button></div><small>Abre o link que está neste campo em uma nova aba, sem modificá-lo.</small></label>
-<label>Observações / descrição<textarea name="notes" rows="4" maxlength="3000" placeholder="Detalhes confirmados do produto">{{ product.notes if product else (draft.notes if draft is defined else '') }}</textarea></label>
-<label>Adicionar fotos (máximo 10 no total)<input type="file" name="photos" accept=".png,.jpg,.jpeg,.webp,.gif" multiple><small>PNG, JPG, WEBP ou GIF. Selecione várias fotos de uma vez.</small></label>
-{% if product and product.image_filename %}<p class="muted">Foto principal atual</p><div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=product.image_filename) }}" alt="Foto principal"><strong>Foto principal</strong></div>{% endif %}
-{% if product %}<h2>Fotos adicionais</h2><p class="muted">Toque em “Usar como principal” para trocar a foto principal. A foto anterior continua salva na galeria.</p>{% for photo in product_photos %}<div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=photo.filename) }}" alt="Foto adicional"><span>Foto adicional</span><button class="button button-quiet button-small" type="submit" form="set-main-photo-{{ photo.id }}">Usar como principal</button></div>{% else %}<p class="muted">Nenhuma foto adicional.</p>{% endfor %}{% endif %}
-<div class="form-row form-actions"><button class="button" type="submit">Salvar produto</button>{% if product %}<button class="button button-danger" type="submit" form="delete-product-form" onclick="return confirm('Excluir este produto e todas as fotos dele? Publicações já criadas continuarão, mas ficarão sem vínculo com o produto.');">Excluir produto</button>{% endif %}</div></form>
-{% if product %}<form id="delete-product-form" method="post" action="{{ url_for('product_delete', product_id=product.id) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"></form>{% endif %}
-<script>
-(function(){
- const field=document.getElementById('category-input');
- const panel=document.getElementById('category-count-list');
- if(!field||!panel)return;
- const choices=Array.from(panel.querySelectorAll('.category-choice'));
- function norm(value){return (value||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim();}
- function close(){panel.hidden=true;choices.forEach(function(button){button.hidden=true;});}
- function update(){
-   const query=norm(field.value);
-   let matches=0;
-   choices.forEach(function(button){
-     const match=query.length>0 && norm(button.dataset.category).includes(query);
-     button.hidden=!match;
-     if(match)matches++;
-   });
-   panel.hidden=matches===0;
-   panel.style.display=matches?'flex':'none';
- }
- choices.forEach(function(button){
-   button.addEventListener('click',function(){
-     field.value=button.dataset.category;
-     close();
-     field.dispatchEvent(new Event('change',{bubbles:true}));
-   });
- });
- field.addEventListener('input',update);
- field.addEventListener('focus',update);
- document.addEventListener('click',function(event){
-   if(!event.target.closest('.category-field'))close();
- });
- field.addEventListener('keydown',function(event){
-   if(event.key==='Escape')close();
- });
+(function () {
+  const field = document.getElementById('category-input');
+  const panel = document.getElementById('category-count-list');
+  if (field && panel) {
+    const choices = Array.from(panel.querySelectorAll('.category-choice'));
+    function norm(value) { return (value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim(); }
+    function close() { panel.hidden = true; choices.forEach(function (button) { button.hidden = true; }); }
+    function update() {
+      const query = norm(field.value); let matches = 0;
+      choices.forEach(function (button) {
+        const match = query.length > 0 && norm(button.dataset.category).includes(query);
+        button.hidden = !match; if (match) matches++;
+      });
+      panel.hidden = matches === 0;
+    }
+    choices.forEach(function (button) {
+      button.addEventListener('click', function () {
+        field.value = button.dataset.category; close();
+        field.dispatchEvent(new Event('change', {bubbles:true}));
+      });
+    });
+    field.addEventListener('input', update); field.addEventListener('focus', update);
+    document.addEventListener('click', function (event) { if (!event.target.closest('.category-field')) close(); });
+    field.addEventListener('keydown', function (event) { if (event.key === 'Escape') close(); });
+  }
+
+  const photos = document.getElementById('product-photos');
+  if (photos) {
+    const savedCount = {{ saved_photo_count }};
+    const count = document.getElementById('photo-total-count');
+    const names = document.getElementById('photo-file-names');
+    photos.addEventListener('change', function () {
+      const selected = Array.from(photos.files || []);
+      if (savedCount + selected.length > 10) {
+        alert('O limite é de 10 fotos no total. Você já tem ' + savedCount + ' foto(s) salva(s).');
+        photos.value = '';
+        if (count) count.textContent = savedCount + ' / 10';
+        if (names) names.textContent = 'Selecione até ' + Math.max(0, 10 - savedCount) + ' foto(s).';
+        return;
+      }
+      if (count) count.textContent = (savedCount + selected.length) + ' / 10';
+      if (names) names.textContent = selected.length
+        ? selected.length + ' arquivo(s): ' + selected.map(function (file) { return file.name; }).join(', ')
+        : 'Clique para selecionar fotos PNG, JPG, WEBP ou GIF.';
+    });
+  }
 })();
 </script>
 {% endblock %}
