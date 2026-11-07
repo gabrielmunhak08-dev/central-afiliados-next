@@ -1009,3 +1009,6 @@ body.sidebar-collapsed .sidebar-collapse-button svg{transform:rotate(180deg)}
   padding:8px 10px;
   line-height:1.4;
 }
+
+/* Mantém o texto opcional na mesma linha do rótulo do produto relacionado. */
+.agenda-field-label{display:block;line-height:1.2;white-space:nowrap}
