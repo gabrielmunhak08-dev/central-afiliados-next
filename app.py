@@ -613,6 +613,11 @@ def create_app(test_config=None):
         from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, search_product_offers
 
         keyword = request.form.get("keyword", "").strip() if request.method == "POST" else request.args.get("q", "").strip()
+        page_value = request.form.get("page", "1") if request.method == "POST" else request.args.get("page", "1")
+        try:
+            page = max(1, min(int(page_value), 100))
+        except (TypeError, ValueError):
+            page = 1
         offers = []
         page_info = {}
         searched = False
@@ -622,7 +627,7 @@ def create_app(test_config=None):
                 result = search_product_offers(
                     ShopeeAffiliateClient(),
                     keyword=keyword,
-                    page=1,
+                    page=page,
                     limit=10,
                     sort_type=5,
                 )
@@ -640,8 +645,96 @@ def create_app(test_config=None):
             keyword=keyword,
             offers=offers,
             page_info=page_info,
+            page=page,
             searched=searched,
         )
+
+    @app.post("/produtos/importar-oferta-shopee")
+    @login_required
+    def import_shopee_offer():
+        from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, search_product_offers
+        from urllib.parse import urlparse
+
+        keyword = request.form.get("keyword", "").strip()
+        item_id = request.form.get("item_id", "").strip()
+        page_value = request.form.get("page", "1")
+        try:
+            page = max(1, min(int(page_value), 100))
+        except (TypeError, ValueError):
+            page = 1
+        if not keyword or not item_id or len(keyword) > 120 or len(item_id) > 80:
+            flash("Não foi possível identificar a oferta. Faça a pesquisa novamente.", "error")
+            return redirect(url_for("shopee_product_search"))
+
+        try:
+            result = search_product_offers(
+                ShopeeAffiliateClient(), keyword=keyword, page=page, limit=10, sort_type=5
+            )
+            offer = next(
+                (item for item in (result.get("nodes") or []) if str(item.get("itemId", "")) == item_id),
+                None,
+            )
+            if offer is None:
+                flash("Essa oferta não está mais nos resultados. Pesquise novamente antes de importar.", "error")
+                return redirect(url_for("shopee_product_search", q=keyword, page=page))
+
+            affiliate_link = str(offer.get("offerLink") or "").strip()
+            parsed = urlparse(affiliate_link)
+            host = (parsed.hostname or "").lower()
+            allowed_hosts = ("shopee.com.br", "shope.ee")
+            valid_link = (
+                parsed.scheme.lower() == "https"
+                and bool(host)
+                and not parsed.username
+                and not parsed.password
+                and parsed.port in (None, 443)
+                and any(host == domain or host.endswith("." + domain) for domain in allowed_hosts)
+            )
+            if not valid_link:
+                flash("A Shopee não forneceu um link de afiliado válido para essa oferta. Nada foi cadastrado.", "error")
+                return redirect(url_for("shopee_product_search", q=keyword, page=page))
+
+            name = str(offer.get("productName") or "").strip()[:180]
+            if not name:
+                flash("A oferta veio sem nome de produto e não pode ser importada.", "error")
+                return redirect(url_for("shopee_product_search", q=keyword, page=page))
+
+            def safe_amount(value):
+                try:
+                    amount = float(value)
+                    return amount if math.isfinite(amount) and amount > 0 else None
+                except (TypeError, ValueError):
+                    return None
+
+            price = safe_amount(offer.get("price"))
+            commission = safe_amount(offer.get("commission"))
+            db = connect_db()
+            try:
+                duplicate = db.execute(
+                    "SELECT id FROM products WHERE affiliate_link = ? AND affiliate_link <> ''",
+                    (affiliate_link,),
+                ).fetchone()
+                if duplicate:
+                    flash("Esse produto já está cadastrado. Abri o catálogo para você conferir.", "info")
+                    return redirect(url_for("product_form", product_id=duplicate["id"]))
+                db.execute(
+                    "INSERT INTO products (name, category, price, affiliate_link, commission, notes) VALUES (?, '', ?, ?, ?, ?)",
+                    (
+                        name,
+                        price,
+                        affiliate_link,
+                        commission,
+                        f"Importado da busca oficial da Shopee · ID {item_id}. Confira preço e comissão antes de divulgar.",
+                    ),
+                )
+                db.commit()
+            finally:
+                db.close()
+            flash("Produto importado com o link de afiliado fornecido pela Shopee. Confira os dados antes de divulgar.", "success")
+            return redirect(url_for("products"))
+        except ShopeeAPIError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("shopee_product_search", q=keyword, page=page))
 
     @app.get("/produtos")
     @login_required
