@@ -1,4 +1,4 @@
-"""Fundação segura da Central de Afiliados; ainda em desenvolvimento."""
+"""Aplicação privada de catálogo e preparação de conteúdo para afiliados."""
 import hmac
 import base64
 import json
@@ -835,7 +835,7 @@ def create_app(test_config=None):
                 elif not draft["price"]:
                     flash("Encontrei alguns dados, mas o preço não ficou disponível no HTML recebido. Confira na página do produto antes de salvar.", "warning")
                 else:
-                    flash("Dados encontrados na página. Confira nome, preço e descrição antes de salvar; a comissão só é preenchida se estiver explícita.", "success")
+                    flash("Dados encontrados na página. Confira nome, preço e descrição antes de salvar; confirme a comissão diretamente na área de afiliados da Shopee.", "success")
                 if not draft["commission"]:
                     flash("A taxa de comissão não apareceu de forma verificável; consulte a área de afiliados da Shopee e preencha manualmente.", "warning")
             else:
