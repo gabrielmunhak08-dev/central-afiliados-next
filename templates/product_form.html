@@ -100,8 +100,9 @@ function testAffiliateLink() {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "https:" || !parsed.hostname) { alert("Cole um link HTTPS válido antes de testar."); return; }
-    const opened = window.open(parsed.href, "_blank", "noopener,noreferrer");
-    if (!opened) window.location.href = parsed.href;
+    const opened = window.open(parsed.href, "_blank");
+    if (opened) opened.opener = null;
+    else window.location.href = parsed.href;
   } catch (_) { alert("Cole um link válido antes de testar."); }
 }
 (function () {
@@ -109,7 +110,7 @@ function testAffiliateLink() {
   const panel = document.getElementById('category-count-list');
   if (field && panel) {
     const choices = Array.from(panel.querySelectorAll('.category-choice'));
-    function norm(value) { return (value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim(); }
+    function norm(value) { return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
     function close() { panel.hidden = true; choices.forEach(function (button) { button.hidden = true; }); }
     function update() {
       const query = norm(field.value); let matches = 0;
