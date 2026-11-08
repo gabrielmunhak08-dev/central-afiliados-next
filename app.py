@@ -803,6 +803,9 @@ def create_app(test_config=None):
                 db.close()
             flash("Produto importado com o link de afiliado fornecido pela Shopee. Confira os dados antes de divulgar.", "success")
             return redirect(url_for("products"))
+        except ShopeeAPIError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("shopee_product_search", q=keyword, page=page))
 
     @app.get("/produtos")
     @login_required
