@@ -1,6 +1,5 @@
 """Aplicação privada de catálogo e preparação de conteúdo para afiliados."""
 import hmac
-import base64
 import json
 import math
 import os
@@ -647,23 +646,6 @@ def create_app(test_config=None):
             photo.stream.seek(0)
             raise ValueError("O arquivo enviado não é uma imagem válida ou está danificado.") from exc
 
-    def validate_generated_image(image_bytes):
-        if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
-            raise ValueError("A imagem gerada excedeu o tamanho permitido.")
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(BytesIO(image_bytes)) as image:
-                    image_format = (image.format or "").upper()
-                    width, height = image.size
-                    if image_format not in image_extensions or width * height > 40000000:
-                        raise ValueError("O Gemini retornou um formato ou tamanho de imagem não aceito.")
-                    image.verify()
-            return image_extensions[image_format]
-        except ValueError:
-            raise
-        except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-            raise ValueError("O Gemini retornou um arquivo de imagem inválido.") from exc
 
     @app.get("/uploads/<path:filename>")
     @login_required
@@ -672,41 +654,19 @@ def create_app(test_config=None):
     @app.route("/produtos/buscar-shopee", methods=["GET", "POST"])
     @login_required
     def shopee_product_search():
-        from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, search_product_offers
-
         keyword = request.form.get("keyword", "").strip() if request.method == "POST" else request.args.get("q", "").strip()
-        page_value = request.form.get("page", "1") if request.method == "POST" else request.args.get("page", "1")
         try:
-            page = max(1, min(int(page_value), 100))
+            page = max(1, min(int(request.form.get("page", "1") if request.method == "POST" else request.args.get("page", "1")), 100))
         except (TypeError, ValueError):
             page = 1
-        offers = []
-        page_info = {}
-        searched = False
-        if request.method == "POST" and keyword:
-            searched = True
-            try:
-                result = search_product_offers(
-                    ShopeeAffiliateClient(),
-                    keyword=keyword,
-                    page=page,
-                    limit=10,
-                    sort_type=5,
-                )
-                offers = result.get("nodes") or []
-                page_info = result.get("pageInfo") or {}
-                if not offers:
-                    flash("A Shopee não retornou produtos para essa busca. Tente outra palavra-chave.", "info")
-            except ShopeeAPIError as exc:
-                flash(str(exc), "error")
-        elif request.method == "POST":
-            flash("Digite o nome de um produto para pesquisar.", "error")
-
+        searched = request.method == "POST"
+        if searched:
+            flash("A busca oficial da Shopee está temporariamente pausada enquanto a integração é reconstruída. Você ainda pode cadastrar produtos pelo link na tela de produtos.", "info")
         return render_template(
             "shopee_search.html",
             keyword=keyword,
-            offers=offers,
-            page_info=page_info,
+            offers=[],
+            page_info={},
             page=page,
             searched=searched,
         )
@@ -714,89 +674,9 @@ def create_app(test_config=None):
     @app.post("/produtos/importar-oferta-shopee")
     @login_required
     def import_shopee_offer():
-        from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, search_product_offers
-        from urllib.parse import urlparse
+        flash("A importação automática de ofertas está temporariamente pausada. Use o cadastro por link ou preencha os dados manualmente.", "info")
+        return redirect(url_for("shopee_product_search"))
 
-        keyword = request.form.get("keyword", "").strip()
-        item_id = request.form.get("item_id", "").strip()
-        page_value = request.form.get("page", "1")
-        try:
-            page = max(1, min(int(page_value), 100))
-        except (TypeError, ValueError):
-            page = 1
-        if not keyword or not item_id or len(keyword) > 120 or len(item_id) > 80:
-            flash("Não foi possível identificar a oferta. Faça a pesquisa novamente.", "error")
-            return redirect(url_for("shopee_product_search"))
-
-        try:
-            result = search_product_offers(
-                ShopeeAffiliateClient(), keyword=keyword, page=page, limit=10, sort_type=5
-            )
-            offer = next(
-                (item for item in (result.get("nodes") or []) if str(item.get("itemId", "")) == item_id),
-                None,
-            )
-            if offer is None:
-                flash("Essa oferta não está mais nos resultados. Pesquise novamente antes de importar.", "error")
-                return redirect(url_for("shopee_product_search", q=keyword, page=page))
-
-            affiliate_link = str(offer.get("offerLink") or "").strip()
-            parsed = urlparse(affiliate_link)
-            host = (parsed.hostname or "").lower()
-            allowed_hosts = ("shopee.com.br", "shope.ee")
-            valid_link = (
-                parsed.scheme.lower() == "https"
-                and bool(host)
-                and not parsed.username
-                and not parsed.password
-                and parsed.port in (None, 443)
-                and any(host == domain or host.endswith("." + domain) for domain in allowed_hosts)
-            )
-            if not valid_link:
-                flash("A Shopee não forneceu um link de afiliado válido para essa oferta. Nada foi cadastrado.", "error")
-                return redirect(url_for("shopee_product_search", q=keyword, page=page))
-
-            name = str(offer.get("productName") or "").strip()[:180]
-            if not name:
-                flash("A oferta veio sem nome de produto e não pode ser importada.", "error")
-                return redirect(url_for("shopee_product_search", q=keyword, page=page))
-
-            def safe_amount(value):
-                try:
-                    amount = float(value)
-                    return amount if math.isfinite(amount) and amount > 0 else None
-                except (TypeError, ValueError):
-                    return None
-
-            price = safe_amount(offer.get("price"))
-            commission = safe_amount(offer.get("commission"))
-            db = connect_db()
-            try:
-                duplicate = db.execute(
-                    "SELECT id FROM products WHERE affiliate_link = ? AND affiliate_link <> ''",
-                    (affiliate_link,),
-                ).fetchone()
-                if duplicate:
-                    flash("Esse produto já está cadastrado. Abri o catálogo para você conferir.", "info")
-                    return redirect(url_for("product_form", product_id=duplicate["id"]))
-                db.execute(
-                    "INSERT INTO products (name, category, price, affiliate_link, commission, notes) VALUES (?, '', ?, ?, ?, ?)",
-                    (
-                        name,
-                        price,
-                        affiliate_link,
-                        commission,
-                        f"Importado da busca oficial da Shopee · ID {item_id}. Confira preço e comissão antes de divulgar.",
-                    ),
-                )
-                db.commit()
-            finally:
-                db.close()
-            flash("Produto importado com o link de afiliado fornecido pela Shopee. Confira os dados antes de divulgar.", "success")
-            return redirect(url_for("products"))
-        except ShopeeAPIError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("shopee_product_search", q=keyword, page=page))
 
     @app.get("/produtos")
     @login_required
@@ -1025,62 +905,6 @@ def create_app(test_config=None):
                 if structured.get(key) and (key != "name" or looks_generic(draft["name"])):
                     draft[key] = structured[key]
 
-            # A API informa nome, preço e comissão; a descrição detalhada vem da página,
-            # pois não é um campo disponível no ProductOfferV2.
-            import re as _re
-            from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, get_product_offer_by_ids
-
-            # Procura os IDs tanto no link enviado quanto no destino final. Alguns links
-            # de afiliado preservam parâmetros de produto mesmo quando o redirecionamento
-            # automático da Shopee falha. Nunca trata o código curto como itemId.
-            ids = None
-            candidate_urls = [resolved_product_url, link]
-            for candidate_url in candidate_urls:
-                parsed_candidate = urlparse(candidate_url)
-                ids = _re.search(r"/product/(\d+)/(\d+)", candidate_url)
-                if not ids:
-                    ids = _re.search(r"-i\.(\d+)\.(\d+)(?:[/?#]|$)", candidate_url)
-                if not ids:
-                    query_values = {}
-                    for part in parsed_candidate.query.split("&"):
-                        if "=" in part:
-                            key, value = part.split("=", 1)
-                            query_values[key.lower()] = value
-                    shop_value = query_values.get("shopid") or query_values.get("shop_id")
-                    item_value = query_values.get("itemid") or query_values.get("item_id")
-                    if shop_value and item_value and shop_value.isdigit() and item_value.isdigit():
-                        ids = type("ProductIds", (), {"group": lambda self, i, a=(shop_value, item_value): a[i - 1]})()
-                if ids:
-                    break
-            if ids:
-                shop_id, item_id = ids.group(1), ids.group(2)
-                try:
-                    offer = get_product_offer_by_ids(ShopeeAffiliateClient(), item_id, shop_id)
-                    if offer:
-                        api_name = clean_text(offer.get("productName"), 180)
-                        if api_name and not looks_generic(api_name):
-                            draft["name"] = api_name
-                        api_price = offer.get("priceMin")
-                        if api_price in (None, ""):
-                            api_price = offer.get("price")
-                        try:
-                            amount = float(str(api_price).replace(",", ".")) if api_price not in (None, "") else 0
-                            if amount > 0 and math.isfinite(amount):
-                                draft["price"] = f"{amount:.2f}".replace(".", ",")
-                        except (TypeError, ValueError):
-                            pass
-                        try:
-                            rate = float(str(offer.get("commissionRate")).replace(",", "."))
-                            if math.isfinite(rate) and rate >= 0:
-                                pct = rate * 100 if rate <= 1 else rate
-                                draft["commission"] = f"{pct:.2f}".rstrip("0").rstrip(".").replace(".", ",")
-                        except (TypeError, ValueError):
-                            pass
-                        flash("Dados consultados na API de Afiliados Shopee. Confira os campos antes de salvar.", "success")
-                    else:
-                        flash("O produto não apareceu nas ofertas disponíveis na API. Mantive os dados encontrados na página.", "warning")
-                except ShopeeAPIError as api_exc:
-                    flash(f"Consulta à API não concluída: {api_exc} Os dados da página foram mantidos.", "warning")
 
             # Não extraímos preço ou comissão de texto genérico: uma página pode mostrar
             # ofertas relacionadas, cupons ou percentuais que não pertencem ao produto.
@@ -1294,172 +1118,9 @@ def create_app(test_config=None):
                 db.close()
             return render_template("content_ai.html", products=products_data, tipo=request.args.get("tipo", "story"))
 
-        content_type = request.form.get("content_type", "story").strip().lower()
-        product_id = request.form.get("product_id", type=int)
-        revision = request.form.get("revision", "").strip()
-        if content_type not in {"story", "post"}:
-            abort(400)
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            flash("Falta configurar GEMINI_API_KEY no ambiente do servidor. Nenhuma imagem foi gerada.", "error")
-            return redirect(url_for("create_content_ai", tipo=content_type))
+        flash("A geração de imagens por IA está temporariamente pausada enquanto a integração é reconstruída. Suas fotos, produtos, configurações e publicações existentes foram preservados.", "info")
+        return redirect(url_for("create_content_ai", tipo=request.form.get("content_type", "story")))
 
-        db = connect_db()
-        try:
-            product = db.execute(
-                "SELECT id, name, category, price, notes, image_filename, affiliate_link FROM products WHERE id=?",
-                (product_id,),
-            ).fetchone() if product_id else None
-            if product is None:
-                flash("Escolha um produto cadastrado.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-            if product["price"] is None or not product["image_filename"]:
-                flash("Este produto precisa ter preço e foto principal cadastrados antes da criação com IA.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-            photos = [product["image_filename"]]
-            photos += [r["filename"] for r in db.execute(
-                "SELECT filename FROM product_images WHERE product_id=? ORDER BY id LIMIT 2", (product_id,)
-            ).fetchall()]
-            parts = []
-            settings = {r["key"]: r["value"] for r in db.execute("SELECT key, value FROM settings").fetchall()}
-            rules = {
-                "gerais": settings.get("general_rules", ""),
-                "estilo": settings.get("visual_style", ""),
-                "cores": settings.get("colors", ""),
-                "texto": settings.get("text_rules", ""),
-                "preço": settings.get("price_rules", ""),
-                "formato": settings.get("story_rules" if content_type == "story" else "feed_rules", ""),
-                "instruções extras": settings.get("extra_instructions", ""),
-            }
-            ratio = "9:16" if content_type == "story" else "3:4"
-            prompt = (
-                "Crie uma arte promocional para Instagram usando as imagens de referência anexadas. "
-                "Não altere a identidade do produto nem invente partes do produto. Gere uma única imagem. "
-                "Inclua textos em português do Brasil, somente quando legíveis e corretos. "
-                "Nunca mencione comissão, percentual de comissão, ganhos do afiliado ou informações internas. "
-                "Não invente desconto, preço anterior, avaliação, garantia ou característica. "
-                f"Produto: {product['name']}. Categoria: {product['category'] or 'não informada'}. "
-                f"Preço cadastrado: R$ {product['price']:.2f}. Detalhes cadastrados: {product['notes'] or 'nenhum'}. "
-                f"Formato obrigatório: {ratio}. Regras salvas pelo usuário: {json.dumps(rules, ensure_ascii=False)}. "
-                f"Pedido de ajuste desta tentativa: {revision or 'primeira versão, sem ajustes adicionais'}. "
-                "Para Stories, deixe uma área livre para inserir o link depois, sem desenhar link ou QR code. "
-                "Para Feed, inclua exatamente a chamada 'Esse e muitos outros no link no perfil'. "
-                "Priorize a foto real, composição limpa e boa leitura. Não adicione textos que não foram pedidos."
-            )
-            parts.append({"text": prompt})
-            for filename in photos:
-                path = upload_dir / filename
-                if not path.is_file():
-                    continue
-                try:
-                    # Normaliza JPEG, PNG, WEBP e GIF (primeiro quadro) para formatos
-                    # aceitos pelo Gemini, preservando transparência quando existir.
-                    with Image.open(path) as source_image:
-                        source_image.seek(0)
-                        has_alpha = (
-                            source_image.mode in {"RGBA", "LA"}
-                            or "transparency" in source_image.info
-                        )
-                        buffer = BytesIO()
-                        if has_alpha:
-                            source_image.convert("RGBA").save(
-                                buffer, format="PNG", optimize=True
-                            )
-                            mime = "image/png"
-                        else:
-                            source_image.convert("RGB").save(
-                                buffer, format="JPEG", quality=90, optimize=True
-                            )
-                            mime = "image/jpeg"
-                        raw = buffer.getvalue()
-                except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-                    continue
-                if not raw or len(raw) > 7 * 1024 * 1024:
-                    continue
-                parts.append({
-                    "inline_data": {
-                        "mime_type": mime,
-                        "data": base64.b64encode(raw).decode("ascii"),
-                    }
-                })
-            if len(parts) == 1:
-                flash("Não encontrei fotos de referência válidas para este produto.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-
-            payload = {
-                "contents": [{"parts": parts}],
-                "generationConfig": {
-                    "responseModalities": ["TEXT", "IMAGE"],
-                    "imageConfig": {"aspectRatio": ratio}
-                }
-            }
-            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent"
-            req = urllib.request.Request(
-                endpoint, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": api_key,
-                }, method="POST"
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=120) as response:
-                    raw_result = response.read(12 * 1024 * 1024 + 1)
-                    if len(raw_result) > 12 * 1024 * 1024:
-                        raise ValueError("A resposta do Gemini excedeu o tamanho permitido.")
-                    result = json.loads(raw_result.decode("utf-8"))
-            except urllib.error.HTTPError as exc:
-                app.logger.warning("Gemini API respondeu com HTTP %s.", exc.code)
-                flash(
-                    f"O Gemini recusou a solicitação (HTTP {exc.code}). Confira a chave, o acesso ao modelo e a cota no Google AI Studio.",
-                    "error",
-                )
-                return redirect(url_for("create_content_ai", tipo=content_type))
-            except (urllib.error.URLError, TimeoutError, OSError):
-                flash("Não foi possível conectar ao Gemini agora. Tente novamente em instantes.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-                flash("O Gemini retornou uma resposta inválida ou grande demais. Tente novamente.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-
-            image_bytes = None
-            caption_parts = []
-            for candidate in result.get("candidates", []):
-                for part in candidate.get("content", {}).get("parts", []):
-                    if part.get("text"):
-                        caption_parts.append(part["text"])
-                    inline = part.get("inlineData") or part.get("inline_data")
-                    if inline and inline.get("data") and (inline.get("mimeType") or inline.get("mime_type", "")).startswith("image/"):
-                        try:
-                            image_bytes = base64.b64decode(inline["data"], validate=True)
-                        except (ValueError, TypeError):
-                            image_bytes = None
-                        if image_bytes:
-                            break
-                if image_bytes:
-                    break
-            if not image_bytes:
-                flash("O Gemini respondeu, mas não retornou uma imagem. Tente novamente ou simplifique as instruções.", "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-
-            try:
-                generated_extension = validate_generated_image(image_bytes)
-            except ValueError as exc:
-                flash(str(exc), "error")
-                return redirect(url_for("create_content_ai", tipo=content_type))
-            filename = uuid.uuid4().hex + generated_extension
-            (upload_dir / filename).write_bytes(image_bytes)
-            caption = "\n".join(caption_parts).strip()
-            if content_type == "post" and "link no perfil" not in caption.lower():
-                caption = (caption + "\n\nEsse e muitos outros no link no perfil.").strip()
-            db.execute(
-                "INSERT INTO posts (product_id, caption, platform, status, content_type, image_filename) VALUES (?, ?, 'Instagram', 'Aguardando', ?, ?)",
-                (product_id, caption, content_type, filename),
-            )
-            db.commit()
-            flash("Imagem criada pelo Gemini e enviada para Aguardando aprovação. Revise antes de publicar.", "success")
-            return redirect(url_for("content", tipo=content_type, status="Aguardando"))
-        finally:
-            db.close()
 
     @app.post("/conteudo/<int:post_id>/status")
     @login_required
