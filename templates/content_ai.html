@@ -2,8 +2,8 @@
 {% block title %}Criar com IA · Central de Afiliados{% endblock %}
 {% block content %}
 <div class="content-nav-row"><a class="back-button" href="{{ url_for('content', tipo=tipo) }}">← Voltar ao conteúdo</a><a class="home-content-link" href="{{ url_for('dashboard') }}">Central principal</a></div>
-<section class="section-heading"><div><p class="eyebrow">CRIAÇÃO ASSISTIDA</p><h1>Criar com <span class="accent">IA</span></h1><p class="muted">Escolha um produto. O Gemini usará as fotos e as regras que você salvou nas Configurações de conteúdo.</p></div></section>
-<div class="settings-warning"><strong>Antes de gerar:</strong> a API do Gemini precisa estar configurada no servidor. A imagem gerada ficará em Aguardando aprovação; ela não será publicada automaticamente.</div>
+<section class="section-heading"><div><p class="eyebrow">CRIAÇÃO ASSISTIDA</p><h1>Criar com <span class="accent">IA</span></h1><p class="muted">Escolha um produto. A criação assistida será reativada após a reconstrução da integração. Suas fotos e regras salvas continuam disponíveis.</p></div></section>
+<div class="settings-warning"><strong>Antes de gerar:</strong> a integração de geração por IA está temporariamente pausada. A imagem gerada ficará em Aguardando aprovação; ela não será publicada automaticamente.</div>
 <form class="form-card settings-form" method="post" action="{{ url_for('create_content_ai') }}">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <label>Tipo de publicação
@@ -17,6 +17,6 @@
     <small>Essas instruções valem para esta criação. Para mudar o padrão das próximas, use Configurações de conteúdo.</small>
   </label>
   <div class="settings-checklist"><strong>Regras aplicadas</strong><p>Usar fotos cadastradas; respeitar o formato; nunca divulgar comissão; não inventar preço, desconto ou características; aguardar sua aprovação antes de publicar.</p></div>
-  <div class="form-actions"><button class="button" type="submit">Gerar imagem com Gemini</button><a class="button button-quiet" href="{{ url_for('content_settings') }}">Editar padrões</a></div>
+  <div class="form-actions"><button class="button" type="submit">Geração por IA temporariamente pausada</button><a class="button button-quiet" href="{{ url_for('content_settings') }}">Editar padrões</a></div>
 </form>
 {% endblock %}
