@@ -1,4 +1,3 @@
-import base64
 import re
 import sqlite3
 from io import BytesIO
@@ -292,46 +291,11 @@ def test_uploaded_images_are_private_and_invalid_files_are_rejected(tmp_path):
     assert "/login" in protected.headers["Location"]
 
 
-@pytest.mark.parametrize("photo_format", ["PNG", "GIF"])
-def test_gemini_uses_current_image_model_and_sends_key_in_header(tmp_path, monkeypatch, photo_format):
+def test_ai_generation_screen_remains_available_while_integration_is_paused(tmp_path):
     app = make_app(tmp_path)
     client = app.test_client()
     create_admin(client)
-    product_id = create_product(app, client, photo_format=photo_format)
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-
-    generated = base64.b64encode(png_bytes()).decode("ascii")
-    response_payload = {
-        "candidates": [{
-            "content": {
-                "parts": [
-                    {"text": "Legenda de teste para a publicação."},
-                    {"inlineData": {"mimeType": "image/png", "data": generated}},
-                ]
-            }
-        }]
-    }
-
-    class FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self, size=-1):
-            data = __import__("json").dumps(response_payload).encode("utf-8")
-            return data[:size] if size >= 0 else data
-
-    seen = {}
-
-    def fake_urlopen(request, timeout):
-        seen["request"] = request
-        seen["timeout"] = timeout
-        return FakeResponse()
-
-    monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
-
+    product_id = create_product(app, client)
     token = csrf(client, "/conteudo/criar-com-ia")
     response = client.post("/conteudo/criar-com-ia", data={
         "_csrf_token": token,
@@ -339,23 +303,11 @@ def test_gemini_uses_current_image_model_and_sends_key_in_header(tmp_path, monke
         "product_id": str(product_id),
         "revision": "Fundo mais limpo",
     }, follow_redirects=True)
-
     assert response.status_code == 200
-    request = seen["request"]
-    assert "models/gemini-3.1-flash-image:generateContent" in request.full_url
-    assert "test-gemini-key" not in request.full_url
-    assert request.get_header("X-goog-api-key") == "test-gemini-key"
-    assert seen["timeout"] == 120
-
+    assert "temporariamente pausada" in response.get_data(as_text=True)
     conn = sqlite3.connect(app.config["DATABASE"])
     try:
-        row = conn.execute(
-            "SELECT caption, image_filename FROM posts WHERE product_id=?",
-            (product_id,),
-        ).fetchone()
-        assert row[0] == "Legenda de teste para a publicação."
-        assert row[1].endswith(".png")
-        assert (Path(app.config["UPLOAD_FOLDER"]) / row[1]).is_file()
+        assert conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0] == 0
     finally:
         conn.close()
 

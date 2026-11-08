@@ -8,7 +8,7 @@
 <section class="section-heading">
   <div><p class="eyebrow">PADRÕES SALVOS</p><h1>Configurações de <span class="accent">conteúdo</span></h1><p class="muted">Edite estas regras uma vez. A Central salva a última versão e ela será usada como referência nas próximas criações.</p></div>
 </section>
-<div class="settings-warning"><strong>Importante:</strong> estas preferências ficam salvas no banco da Central. A geração real de imagens pelo Gemini ainda precisa ser conectada; esta tela não chama a IA sozinha.</div>
+<div class="settings-warning"><strong>Importante:</strong> estas preferências ficam salvas no banco da Central. A geração automática de imagens está temporariamente pausada. Suas preferências continuam salvas no banco e serão reutilizadas quando a integração for reconstruída.</div>
 <form class="form-card settings-form" method="post" action="{{ url_for('content_settings') }}">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <h2>Regras gerais da IA</h2>

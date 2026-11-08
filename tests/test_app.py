@@ -23,37 +23,6 @@ def csrf(client, path):
     return match.group(1)
 
 
-def test_get_product_offer_by_ids_queries_api_and_matches_ids():
-    from shopee_affiliate import get_product_offer_by_ids
-
-    class FakeClient:
-        def request(self, query, variables=None, operation_name=None):
-            assert "itemId: $itemId" in query
-            assert variables == {"itemId": 456, "page": 1, "limit": 10, "shopId": 123}
-            assert operation_name == "ProductOfferById"
-            return {"productOfferV2": {"nodes": [
-                {"itemId": 999, "shopId": 123, "productName": "Outro"},
-                {"itemId": 456, "shopId": 123, "productName": "Tênis",
-                 "priceMin": "89.90", "commissionRate": "0.15"},
-            ]}}
-
-    offer = get_product_offer_by_ids(FakeClient(), item_id="456", shop_id="123")
-    assert offer["productName"] == "Tênis"
-    assert offer["priceMin"] == "89.90"
-
-
-def test_get_product_offer_by_ids_returns_none_when_product_not_in_offers():
-    from shopee_affiliate import get_product_offer_by_ids
-
-    class FakeClient:
-        def request(self, query, variables=None, operation_name=None):
-            return {"productOfferV2": {"nodes": [
-                {"itemId": 789, "shopId": 123, "productName": "Outro"},
-            ]}}
-
-    assert get_product_offer_by_ids(FakeClient(), item_id=456, shop_id=123) is None
-
-
 def test_health_endpoint(tmp_path):
     app = make_app(tmp_path)
     response = app.test_client().get("/health")
@@ -213,7 +182,6 @@ def test_catalog_accepts_multiple_product_photos(tmp_path):
         conn.close()
 
 
-
 def login_first_user(client):
     token = csrf(client, "/configurar")
     client.post("/configurar", data={
@@ -231,73 +199,21 @@ def test_shopee_search_page_requires_login(tmp_path):
     assert "/login" in response.headers["Location"]
 
 
-def test_shopee_search_page_renders_without_credentials_and_does_not_save_products(tmp_path, monkeypatch):
-    from shopee_affiliate import ShopeeAffiliateClient, ShopeeAPIError
 
+def test_shopee_search_page_stays_available_while_api_is_paused(tmp_path):
     app = make_app(tmp_path)
     client = app.test_client()
     login_first_user(client)
-    monkeypatch.setattr(
-        ShopeeAffiliateClient,
-        "request",
-        lambda *args, **kwargs: (_ for _ in ()).throw(ShopeeAPIError("API não configurada para teste")),
-    )
     token = csrf(client, "/produtos/buscar-shopee")
     response = client.post(
         "/produtos/buscar-shopee",
         data={"_csrf_token": token, "keyword": "tênis de corrida"},
         follow_redirects=True,
     )
-    assert response.status_code == 200
-    assert "tênis de corrida" in response.get_data(as_text=True)
-    assert "API não configurada para teste" in response.get_data(as_text=True)
-    import sqlite3
-    conn = sqlite3.connect(app.config["DATABASE"])
-    try:
-        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
-    finally:
-        conn.close()
-
-
-def test_shopee_search_page_renders_mocked_offers_without_saving(tmp_path, monkeypatch):
-    from shopee_affiliate import ShopeeAffiliateClient
-
-    app = make_app(tmp_path)
-    client = app.test_client()
-    login_first_user(client)
-    monkeypatch.setattr(
-        ShopeeAffiliateClient,
-        "request",
-        lambda *args, **kwargs: {
-            "productOfferV2": {
-                "nodes": [{
-                    "itemId": "12345",
-                    "productName": "Tênis de teste",
-                    "shopName": "Loja teste",
-                    "price": 119.8,
-                    "imageUrl": "https://example.com/tenis.jpg",
-                    "offerLink": "https://example.com/oferta",
-                    "productLink": "https://example.com/produto",
-                    "commissionRate": "8%",
-                    "sales": 10,
-                    "ratingStar": 4.8,
-                    "priceDiscountRate": 15,
-                }],
-                "pageInfo": {"page": 1, "limit": 10, "hasNextPage": False},
-            }
-        },
-    )
-    token = csrf(client, "/produtos/buscar-shopee")
-    response = client.post(
-        "/produtos/buscar-shopee",
-        data={"_csrf_token": token, "keyword": "tênis"},
-        follow_redirects=True,
-    )
     html = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "Tênis de teste" in html
-    assert "119,80" in html
-    assert "Conferir link de afiliado" in html
+    assert "tênis de corrida" in html
+    assert "temporariamente pausada" in html
     import sqlite3
     conn = sqlite3.connect(app.config["DATABASE"])
     try:
@@ -305,107 +221,6 @@ def test_shopee_search_page_renders_mocked_offers_without_saving(tmp_path, monke
     finally:
         conn.close()
 
-
-
-def test_shopee_offer_import_saves_verified_affiliate_link_and_product(tmp_path, monkeypatch):
-    import sqlite3
-    from shopee_affiliate import ShopeeAffiliateClient
-
-    app = make_app(tmp_path)
-    client = app.test_client()
-    login_first_user(client)
-    offer = {
-        "itemId": "98765",
-        "productName": "Garrafa térmica de teste",
-        "shopName": "Loja oficial",
-        "price": 59.9,
-        "commission": 4.25,
-        "commissionRate": "8%",
-        "offerLink": "https://s.shopee.com.br/link-afiliado-teste",
-    }
-    monkeypatch.setattr(
-        ShopeeAffiliateClient,
-        "request",
-        lambda *args, **kwargs: {"productOfferV2": {"nodes": [offer], "pageInfo": {}}},
-    )
-    token = csrf(client, "/produtos/buscar-shopee")
-    response = client.post(
-        "/produtos/importar-oferta-shopee",
-        data={
-            "_csrf_token": token,
-            "keyword": "garrafa térmica",
-            "page": "1",
-            "item_id": "98765",
-        },
-        follow_redirects=True,
-    )
-    assert response.status_code == 200
-    assert "Produto importado com o link de afiliado" in response.get_data(as_text=True)
-    conn = sqlite3.connect(app.config["DATABASE"])
-    try:
-        saved = conn.execute(
-            "SELECT name, price, affiliate_link, commission FROM products"
-        ).fetchone()
-        assert saved == (
-            "Garrafa térmica de teste",
-            59.9,
-            "https://s.shopee.com.br/link-afiliado-teste",
-            4.25,
-        )
-    finally:
-        conn.close()
-
-
-def test_shopee_offer_import_rejects_untrusted_link_and_tampered_item_id(tmp_path, monkeypatch):
-    import sqlite3
-    from shopee_affiliate import ShopeeAffiliateClient
-
-    app = make_app(tmp_path)
-    client = app.test_client()
-    login_first_user(client)
-    offer = {
-        "itemId": "98765",
-        "productName": "Produto com link externo",
-        "price": 20,
-        "offerLink": "https://example.com/not-an-affiliate-link",
-    }
-    monkeypatch.setattr(
-        ShopeeAffiliateClient,
-        "request",
-        lambda *args, **kwargs: {"productOfferV2": {"nodes": [offer], "pageInfo": {}}},
-    )
-    token = csrf(client, "/produtos/buscar-shopee")
-    response = client.post(
-        "/produtos/importar-oferta-shopee",
-        data={
-            "_csrf_token": token,
-            "keyword": "produto",
-            "page": "1",
-            "item_id": "98765",
-        },
-        follow_redirects=True,
-    )
-    assert response.status_code == 200
-    assert "link de afiliado válido" in response.get_data(as_text=True)
-    conn = sqlite3.connect(app.config["DATABASE"])
-    try:
-        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
-    finally:
-        conn.close()
-
-    token = csrf(client, "/produtos/buscar-shopee")
-    response = client.post(
-        "/produtos/importar-oferta-shopee",
-        data={
-            "_csrf_token": token,
-            "keyword": "produto",
-            "page": "1",
-            "item_id": "ID-QUE-NAO-VEIO-DA-BUSCA",
-        },
-        follow_redirects=True,
-    )
-    assert response.status_code == 200
-    assert "não está mais nos resultados" in response.get_data(as_text=True)
 
 def test_catalog_hides_category_overview_but_keeps_categories_in_system(tmp_path):
     import sqlite3
