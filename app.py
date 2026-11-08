@@ -654,33 +654,6 @@ def create_app(test_config=None):
     @app.route("/produtos/buscar-shopee", methods=["GET", "POST"])
     @login_required
     def shopee_product_search():
-        keyword = request.form.get("keyword", "").strip() if request.method == "POST" else request.args.get("q", "").strip()
-        try:
-            page = max(1, min(int(request.form.get("page", "1") if request.method == "POST" else request.args.get("page", "1")), 100))
-        except (TypeError, ValueError):
-            page = 1
-        searched = request.method == "POST"
-        if searched:
-            flash("A busca oficial da Shopee está temporariamente pausada enquanto a integração é reconstruída. Você ainda pode cadastrar produtos pelo link na tela de produtos.", "info")
-        return render_template(
-            "shopee_search.html",
-            keyword=keyword,
-            offers=[],
-            page_info={},
-            page=page,
-            searched=searched,
-        )
-
-    @app.post("/produtos/importar-oferta-shopee")
-    @login_required
-    def import_shopee_offer():
-        flash("A importação automática de ofertas está temporariamente pausada. Use o cadastro por link ou preencha os dados manualmente.", "info")
-        return redirect(url_for("shopee_product_search"))
-
-
-    @app.route("/produtos/buscar-shopee", methods=["GET", "POST"])
-    @login_required
-    def shopee_product_search():
         from shopee_affiliate import ShopeeAPIError, ShopeeAffiliateClient, search_product_offers
 
         keyword = request.form.get("keyword", "").strip() if request.method == "POST" else request.args.get("q", "").strip()
