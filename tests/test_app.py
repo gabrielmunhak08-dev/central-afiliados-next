@@ -200,7 +200,13 @@ def test_shopee_search_page_requires_login(tmp_path):
 
 
 
-def test_shopee_search_page_stays_available_while_api_is_paused(tmp_path):
+def test_shopee_search_page_accepts_search_and_does_not_import_automatically(tmp_path, monkeypatch):
+    from shopee_affiliate import ShopeeAPIError
+
+    def unavailable_client(*args, **kwargs):
+        raise ShopeeAPIError("Credenciais da API Shopee não configuradas.")
+
+    monkeypatch.setattr("shopee_affiliate.ShopeeAffiliateClient", unavailable_client)
     app = make_app(tmp_path)
     client = app.test_client()
     login_first_user(client)
@@ -213,7 +219,7 @@ def test_shopee_search_page_stays_available_while_api_is_paused(tmp_path):
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "tênis de corrida" in html
-    assert "temporariamente pausada" in html
+    assert "Credenciais da API Shopee não configuradas." in html
     import sqlite3
     conn = sqlite3.connect(app.config["DATABASE"])
     try:
