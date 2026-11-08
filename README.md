@@ -6,10 +6,10 @@ Aplicação privada para organizar produtos de afiliado Shopee, preparar conteú
 
 - **Acesso e usuários:** configuração do primeiro administrador, login, hash de senha, proteção CSRF e administração de usuários.
 - **Catálogo:** cadastro e edição de produtos, categorias, preço, comissão informada, link de afiliado e galeria de até 10 fotos.
-- **Importação por link:** ao colar um link de afiliado, a Central tenta resolver o produto, consulta nome, preço e taxa de comissão na API oficial quando identifica os IDs e as credenciais estão configuradas. A descrição é lida dos metadados/JSON-LD da página quando disponíveis, pois não faz parte dos campos de ProductOfferV2. Revise os dados antes de salvar.
-- **Busca oficial Shopee:** consulta ofertas por `productOfferV2` e mostra os resultados para avaliação. A busca não cadastra produtos automaticamente nesta versão.
+- **Importação por link:** ao colar um link de afiliado, a Central tenta ler nome, preço e descrição dos metadados/JSON-LD da própria página quando disponíveis. A consulta complementar à API foi retirada nesta etapa. Revise os dados antes de salvar e preencha manualmente o que não estiver disponível.
+- **Busca oficial Shopee:** a tela permanece disponível, mas a consulta automática está temporariamente pausada enquanto a integração é reconstruída.
 - **Marketing:** organização de conteúdo de Story e Feed, legenda, imagens e status de aprovação/publicação.
-- **Criação com IA:** usa as fotos cadastradas e as regras salvas para gerar uma arte com Gemini. A imagem entra como aguardando aprovação; não existe publicação automática no Instagram.
+- **Criação com IA:** a tela, as regras salvas e a seleção de produtos permanecem disponíveis; a geração automática de imagens está temporariamente pausada enquanto a integração é reconstruída.
 - **Calendário:** agenda semanal básica para compromissos e tarefas. A experiência visual e a gestão editorial ainda podem evoluir.
 
 ## O que ainda não está concluído
@@ -27,7 +27,7 @@ Não considere uma integração validada até que o teste seja feito com uma con
 - Python 3.12 recomendado.
 - Windows 10/11 ou Linux.
 - `CENTRAL_SECRET_KEY` forte e exclusiva da instalação.
-- Credenciais Shopee e chave Gemini somente quando os respectivos recursos forem usados.
+- Integrações externas serão reconfiguradas em etapa posterior; chaves secretas devem ficar em GitHub Secrets no fluxo de implantação ou em `.env` local fora do Git.
 
 ## Instalação no notebook servidor
 
@@ -37,7 +37,7 @@ Não considere uma integração validada até que o teste seja feito com uma con
 python -m pip install -r requirements.txt
 ```
 
-2. Copie `.env.example` para `.env` na pasta do projeto e preencha os valores localmente. O arquivo `.env` é ignorado pelo Git e nunca deve ser enviado ao repositório.
+2. Copie `.env.example` para `.env` na pasta do projeto e preencha as configurações locais. O arquivo `.env` é ignorado pelo Git e nunca deve ser enviado ao repositório.
 
 3. Para acesso pela internet através de um túnel HTTPS, mantenha `CENTRAL_COOKIE_SECURE=1`. Para teste exclusivamente local via `http://127.0.0.1`, use `CENTRAL_COOKIE_SECURE=0`.
 
