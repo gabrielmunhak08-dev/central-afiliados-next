@@ -1131,6 +1131,63 @@ def create_app(test_config=None):
         finally:
             db.close()
 
+    @app.post("/produtos/<int:product_id>/foto-principal/excluir")
+    @login_required
+    def delete_main_product_photo(product_id):
+        db = connect_db()
+        filename = None
+        try:
+            product = db.execute(
+                "SELECT image_filename FROM products WHERE id=?", (product_id,)
+            ).fetchone()
+            if product is None:
+                abort(404)
+            filename = product["image_filename"]
+            next_photo = db.execute(
+                "SELECT id, filename FROM product_images WHERE product_id=? ORDER BY id LIMIT 1",
+                (product_id,),
+            ).fetchone()
+            db.execute(
+                "UPDATE products SET image_filename=? WHERE id=?",
+                (next_photo["filename"] if next_photo else None, product_id),
+            )
+            if next_photo:
+                db.execute("DELETE FROM product_images WHERE id=?", (next_photo["id"],))
+            db.commit()
+            if filename:
+                (upload_dir / filename).unlink(missing_ok=True)
+            flash("Foto principal excluída. A próxima foto foi promovida, se disponível.", "success")
+        finally:
+            db.close()
+        return redirect(url_for("product_form", product_id=product_id))
+
+
+    @app.post("/produtos/<int:product_id>/foto/<int:photo_id>/excluir")
+    @login_required
+    def delete_product_photo(product_id, photo_id):
+        db = connect_db()
+        filename = None
+        try:
+            photo = db.execute(
+                "SELECT filename FROM product_images WHERE id=? AND product_id=?",
+                (photo_id, product_id),
+            ).fetchone()
+            if photo is None:
+                abort(404)
+            filename = photo["filename"]
+            db.execute(
+                "DELETE FROM product_images WHERE id=? AND product_id=?",
+                (photo_id, product_id),
+            )
+            db.commit()
+            if filename:
+                (upload_dir / filename).unlink(missing_ok=True)
+            flash("Foto removida do produto.", "success")
+        finally:
+            db.close()
+        return redirect(url_for("product_form", product_id=product_id))
+
+
     @app.route("/conteudo", methods=["GET", "POST"])
     @login_required
     def content():
