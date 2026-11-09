@@ -63,24 +63,25 @@
     <div class="product-photo-heading"><div><strong>Fotos do produto</strong><small>Até 10 imagens no total por produto.</small></div><span class="photo-total-count" id="photo-total-count">{{ saved_photo_count }} / 10</span></div>
     <label class="file-upload-control" for="product-photos">
       <span class="file-upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span class="file-upload-copy"><strong>Escolher arquivos</strong><small id="photo-file-names">Clique para selecionar fotos PNG, JPG, WEBP ou GIF.</small></span>
+      <span class="file-upload-copy"><strong>Escolher arquivos ou colar fotos</strong><small id="photo-file-names">Selecione arquivos ou copie uma imagem e pressione Ctrl+V nesta área.</small></span>
       <span class="file-upload-count">Selecionar fotos</span>
-      <input type="file" id="product-photos" name="photos" accept=".png,.jpg,.jpeg,.webp,.gif" multiple>
+      <input type="file" id="product-photos" name="photos" accept=".png,.jpg,.jpeg,.webp,.gif,image/*" multiple>
     </label>
+    <div class="paste-photo-zone" id="paste-photo-zone" tabindex="0">📋 Clique aqui e pressione <strong>Ctrl+V</strong> para colar fotos copiadas</div>
     <p class="photo-limit-note">Já salvas: {{ saved_photo_count }} · Disponíveis: {{ 10 - saved_photo_count }} foto(s)</p>
   </div>
 
   {% if product and product.image_filename %}
   <div class="product-saved-photos">
     <p class="muted">Foto principal atual</p>
-    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=product.image_filename) }}" alt="Foto principal"><strong>Foto principal</strong></div>
+    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=product.image_filename) }}" alt="Foto principal"><strong>Foto principal</strong><form method="post" action="{{ url_for('delete_main_product_photo', product_id=product.id) }}" onsubmit="return confirm('Excluir a foto principal?');"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="button button-danger button-small" type="submit">Excluir foto</button></form></div>
   </div>
   {% endif %}
   {% if product %}
   <div class="product-saved-photos">
     <h2>Fotos adicionais</h2><p class="muted">Você pode definir uma foto adicional como principal. A foto anterior continua na galeria.</p>
     {% for photo in product_photos %}
-    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=photo.filename) }}" alt="Foto adicional"><span>Foto adicional {{ loop.index }}</span><button class="button button-quiet button-small" type="submit" form="set-main-photo-{{ photo.id }}">Usar como principal</button></div>
+    <div class="photo-row"><img class="form-thumb" src="{{ url_for('uploaded_file', filename=photo.filename) }}" alt="Foto adicional"><span>Foto adicional {{ loop.index }}</span><div class="photo-row-actions"><button class="button button-quiet button-small" type="submit" form="set-main-photo-{{ photo.id }}">Usar como principal</button><form method="post" action="{{ url_for('delete_product_photo', product_id=product.id, photo_id=photo.id) }}" onsubmit="return confirm('Excluir esta foto?');"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="button button-danger button-small" type="submit">Excluir</button></form></div></div>
     {% else %}<p class="muted">Nenhuma foto adicional.</p>{% endfor %}
   </div>
   {% endif %}
@@ -136,20 +137,66 @@ function testAffiliateLink() {
     const savedCount = {{ saved_photo_count }};
     const count = document.getElementById('photo-total-count');
     const names = document.getElementById('photo-file-names');
-    photos.addEventListener('change', function () {
+    const pasteZone = document.getElementById('paste-photo-zone');
+    function refreshPhotoList() {
       const selected = Array.from(photos.files || []);
-      if (savedCount + selected.length > 10) {
-        alert('O limite é de 10 fotos no total. Você já tem ' + savedCount + ' foto(s) salva(s).');
-        photos.value = '';
-        if (count) count.textContent = savedCount + ' / 10';
-        if (names) names.textContent = 'Selecione até ' + Math.max(0, 10 - savedCount) + ' foto(s).';
-        return;
-      }
       if (count) count.textContent = (savedCount + selected.length) + ' / 10';
       if (names) names.textContent = selected.length
-        ? selected.length + ' arquivo(s): ' + selected.map(function (file) { return file.name; }).join(', ')
-        : 'Clique para selecionar fotos PNG, JPG, WEBP ou GIF.';
+        ? selected.length + ' imagem(ns) selecionada(s): ' + selected.map(function (file) { return file.name; }).join(', ')
+        : 'Selecione arquivos ou copie uma imagem e pressione Ctrl+V nesta área.';
+    }
+    function addFiles(newFiles) {
+      const images = Array.from(newFiles || []).filter(function (file) { return file && file.type && file.type.indexOf('image/') === 0; });
+      if (!images.length) return;
+      const transfer = new DataTransfer();
+      Array.from(photos.files || []).forEach(function (file) { transfer.items.add(file); });
+      images.forEach(function (file, index) {
+        if (savedCount + transfer.items.length >= 10) return;
+        const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const safeFile = new File([file], file.name || ('imagem-colada-' + Date.now() + '-' + index + '.' + ext), {type:file.type});
+        transfer.items.add(safeFile);
+      });
+      photos.files = transfer.files;
+      if (savedCount + photos.files.length > 10) {
+        alert('O limite é de 10 fotos no total. Você já tem ' + savedCount + ' foto(s) salva(s).');
+        photos.value = '';
+      }
+      refreshPhotoList();
+    }
+    photos.addEventListener('change', function () {
+      if (savedCount + photos.files.length > 10) {
+        alert('O limite é de 10 fotos no total. Você já tem ' + savedCount + ' foto(s) salva(s).');
+        photos.value = '';
+      }
+      refreshPhotoList();
     });
+    document.addEventListener('paste', function (event) {
+      const items = event.clipboardData && event.clipboardData.items;
+      if (!items) return;
+      const pasted = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) pasted.push(file);
+        }
+      }
+      if (pasted.length) {
+        event.preventDefault();
+        addFiles(pasted);
+        if (pasteZone) pasteZone.classList.add('has-pasted');
+      }
+    });
+    if (pasteZone) {
+      pasteZone.addEventListener('click', function () { pasteZone.focus(); });
+      pasteZone.addEventListener('keydown', function (event) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+          event.preventDefault();
+          alert('Use Ctrl+V para colar a imagem copiada. Se o navegador não permitir, selecione o arquivo normalmente.');
+        }
+      });
+    }
+    refreshPhotoList();
   }
 })();
 </script>
