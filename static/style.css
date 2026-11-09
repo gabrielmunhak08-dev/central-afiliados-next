@@ -1016,3 +1016,16 @@ body.sidebar-collapsed .sidebar-collapse-button svg{transform:rotate(180deg)}
 /* Garante contraste do CTA dentro do estado vazio do catálogo. */
 .product-empty-state a.product-empty-cta{color:#17100a!important;text-decoration:none}
 .product-empty-state a.product-empty-cta:hover{color:#17100a!important;filter:brightness(1.06)}
+
+
+/* Melhorias de edição de produtos, colagem e ações de marketing */
+.product-edit-link{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,#1b222b,#12171e);color:var(--text);font-weight:700;text-decoration:none;transition:border-color .18s,transform .18s,background .18s}
+.product-edit-link:hover{border-color:var(--orange);background:#241b14;transform:translateY(-1px)}
+.product-edit-arrow{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--orange);color:#17100a;font-size:1.2rem}
+.paste-photo-zone{margin-top:10px;padding:16px;border:1px dashed var(--orange);border-radius:12px;background:#ff6b000d;color:var(--text);text-align:center;cursor:pointer}
+.paste-photo-zone:focus,.paste-photo-zone.has-pasted{outline:2px solid var(--orange);outline-offset:2px;background:#ff6b0018}
+.photo-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.photo-row-actions form{margin:0}
+.content-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.content-actions .button{min-height:40px}
+@media(max-width:560px){.product-edit-link{padding:13px}.photo-row{flex-wrap:wrap}.photo-row-actions{width:100%}.content-actions>*{flex:1 1 100%;justify-content:center}}
