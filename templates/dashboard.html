@@ -45,6 +45,15 @@
   </div>
 </section>
 
+<section class="dashboard-section">
+  <div class="dashboard-section-heading"><div><p class="eyebrow">FERRAMENTAS EXTERNAS</p><h2>Seus acessos rápidos</h2></div><span class="section-caption">Abrem em uma nova aba</span></div>
+  <div class="workspace-grid">
+    <a class="workspace-card" href="https://web.whatsapp.com/" target="_blank" rel="noopener noreferrer"><div class="workspace-card-top"><span class="workspace-icon">✉</span><span class="workspace-arrow">↗</span></div><span class="workspace-index">COMUNICAÇÃO</span><h3>WhatsApp Web</h3><p>Abra suas conversas para compartilhar links de produtos.</p><span class="workspace-link">Abrir WhatsApp <span>→</span></span></a>
+    <a class="workspace-card" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer"><div class="workspace-card-top"><span class="workspace-icon">✧</span><span class="workspace-arrow">↗</span></div><span class="workspace-index">INTELIGÊNCIA ARTIFICIAL</span><h3>ChatGPT</h3><p>Acesse o ChatGPT para apoiar textos e campanhas.</p><span class="workspace-link">Abrir ChatGPT <span>→</span></span></a>
+    <a class="workspace-card" href="https://shopee.com.br/" target="_blank" rel="noopener noreferrer"><div class="workspace-card-top"><span class="workspace-icon">S</span><span class="workspace-arrow">↗</span></div><span class="workspace-index">LOJA</span><h3>Shopee</h3><p>Visite a loja e pesquise produtos.</p><span class="workspace-link">Abrir Shopee <span>→</span></span></a>
+    <a class="workspace-card" href="https://affiliate.shopee.com.br/dashboard" target="_blank" rel="noopener noreferrer"><div class="workspace-card-top"><span class="workspace-icon">↗</span><span class="workspace-arrow">↗</span></div><span class="workspace-index">GESTÃO DE AFILIADOS</span><h3>Painel de Afiliados</h3><p>Acesse as ferramentas oficiais de afiliado.</p><span class="workspace-link">Abrir painel <span>→</span></span></a>
+  </div>
+</section>
 {% if is_admin %}
 <section class="admin-strip"><span class="admin-strip-icon">⚙</span><div><strong>Administração</strong><p>Gerencie os acessos de quem está testando a Central.</p></div><a class="button button-small button-quiet" href="{{ url_for('users_admin') }}">Gerenciar usuários <span>→</span></a></section>
 {% endif %}
