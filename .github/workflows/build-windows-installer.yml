@@ -1,0 +1,57 @@
+name: Build instalador Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - central-atalhos-integrados
+    paths:
+      - "app.py"
+      - "templates/**"
+      - "static/**"
+      - "requirements.txt"
+      - "desktop_launcher.py"
+      - "installer/**"
+      - ".github/workflows/build-windows-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Empacotar aplicativo
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --name CentralDeAfiliados --add-data "templates;templates" --add-data "static;static" desktop_launcher.py
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Gerar instalador
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\CentralDeAfiliados.iss"
+
+      - name: Publicar instalador para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: CentralDeAfiliados-Instalador-Windows
+          path: installer/output/CentralDeAfiliados-Instalador.exe
+          if-no-files-found: error
+          retention-days: 30
