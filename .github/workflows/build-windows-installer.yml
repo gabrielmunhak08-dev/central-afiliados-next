@@ -40,13 +40,10 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onedir --name CentralDeAfiliados --add-data "templates;templates" --add-data "static;static" desktop_launcher.py
 
-      - name: Instalar Inno Setup
-        run: choco install innosetup --yes --no-progress
-
-      - name: Gerar instalador
+      - name: Gerar instalador Inno Setup
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\CentralDeAfiliados.iss"
+          iscc "installer\CentralDeAfiliados.iss"
 
       - name: Publicar instalador para download
         uses: actions/upload-artifact@v4
